@@ -234,6 +234,12 @@ class ScrumBot:
 
     def _update_channel_info(self, channel_id):
         channel = self.driver.channels.get_channel(channel_id)
+        
+        # Skip Town Square channel
+        if channel['name'] == 'town-square':
+            print(f"Skipping Town Square channel")
+            return
+            
         members = self.driver.channels.get_channel_members(channel_id)
         member_usernames = [
             self.driver.users.get_user(member['user_id'])['username']
@@ -263,9 +269,9 @@ class ScrumBot:
                     channel_name = channel_info.get('name', '')
                     print(f"\nProcessing channel: {channel_name} ({channel_id})")
                     
-                    # Skip DM channels - they will have names like user1__user2
-                    if '__' in channel_name or channel_name == '':
-                        print(f"Skipping DM channel: {channel_name}")
+                    # Skip DM channels and Town Square
+                    if '__' in channel_name or channel_name == '' or channel_name == 'town-square':
+                        print(f"Skipping channel: {channel_name}")
                         continue
                     
                     # Create user tags for all members except excluded users and the bot
