@@ -1,0 +1,11 @@
+{
+    "messages": {
+        "daily_report": "Please reply to this thread with your daily report including:\n1. What did you accomplish yesterday?\n2. What are you planning to do today?\n3. Any blockers or challenges?",
+        "reminder": "Hey, it seems you missed the daily report today, please submit your report as soon as possible. \n\nEven if you have done nothing, it's ok to report. \n\nFailure to report will affect your work performance and affect the whole team, please be advised! \n\nLet's do it together! \n"
+    },
+    "schedule": {
+        "report_time": "11:00",
+        "reminder_interval": 3,
+        "timezone": 7
+    }
+} 

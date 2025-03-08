@@ -13,6 +13,7 @@ A Mattermost bot that helps teams manage daily scrum reports by sending reminder
 ## Setup
 
 1. Create a bot account in Mattermost and get the bot token
+
 2. Install the required dependencies:
    ```bash
    pip install -r requirements.txt
@@ -26,10 +27,23 @@ A Mattermost bot that helps teams manage daily scrum reports by sending reminder
    EXCLUDED_USERS=user1,user2,user3
    ```
 
-4. Configure the bot settings in `config.py`:
-   - `REPORT_TIME`: Time to send daily reports (24-hour format)
-   - `REMINDER_INTERVAL`: Hours between reminder messages
-   - Customize the report and reminder messages
+4. Create a `config.json` file:
+   - Copy `config_example.json` to `config.json`
+   - Customize the settings in `config.json`:
+     ```json
+     {
+         "messages": {
+             "daily_report": "Your daily report message template",
+             "reminder": "Your reminder message template"
+         },
+         "schedule": {
+             "report_time": "11:00",    // Time to send daily reports (24-hour format)
+             "reminder_interval": 3,     // Hours between reminder messages
+             "timezone": 7              // Timezone offset (e.g., 7 for GMT+7)
+         }
+     }
+     ```
+   - If `config.json` is not found, the bot will use default values from `config.py`
 
 ## Running the Bot
 

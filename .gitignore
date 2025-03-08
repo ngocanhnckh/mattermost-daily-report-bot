@@ -1,3 +1,4 @@
 .env
 daily_reports.db
 __pycache__
+config.json
