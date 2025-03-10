@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  mattermost-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    network_mode: host  # This gives the container the same network access as the host
+    volumes:
+      - ./data:/app/data  # Mount the data directory
+      - ./.env:/app/.env  # Mount the .env file
+      - ./config.json:/app/config.json  # Mount the config file
+      - ./daily_reports.db:/app/daily_reports.db  # Mount the SQLite database
+    environment:
+      - PYTHONUNBUFFERED=1  # This ensures Python output is sent straight to container logs
+    restart: unless-stopped  # Automatically restart the container unless manually stopped
+
+volumes:
+  data:  # Define a named volume for persistent data storage
