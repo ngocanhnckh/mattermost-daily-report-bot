@@ -40,6 +40,7 @@ Let's do it together! \n
 MATTERMOST_URL = os.getenv('MATTERMOST_URL', 'http://localhost:8065')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 BOT_USERNAME = os.getenv('BOT_USERNAME', 'scrum-bot')
+TEAM_NAME = os.getenv('TEAM_NAME', '')
 
 # User Configuration
 EXCLUDED_USERS = os.getenv('EXCLUDED_USERS', '').split(',')

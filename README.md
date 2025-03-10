@@ -30,7 +30,7 @@ A Mattermost bot that helps teams manage daily scrum reports by sending reminder
    BOT_TOKEN=your_bot_token
    BOT_USERNAME=your_bot_username
    EXCLUDED_USERS=user1,user2,user3
-   
+   TEAM=yourteamnameinmattermost
    # AI Validation Settings (Optional)
    AI_VALIDATION_ENABLED=true
    OPENROUTER_API_KEY=your_openrouter_api_key

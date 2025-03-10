@@ -10,7 +10,8 @@ from config import (
     MATTERMOST_URL, BOT_TOKEN, BOT_USERNAME,
     REPORT_TIME, REMINDER_INTERVAL, EXCLUDED_USERS,
     DAILY_REPORT_MESSAGE, REMINDER_MESSAGE, TIMEZONE,
-    AI_VALIDATION_ENABLED, OPENROUTER_API_KEY, SITE_URL, SITE_NAME
+    AI_VALIDATION_ENABLED, OPENROUTER_API_KEY, SITE_URL, SITE_NAME,
+    TEAM_NAME
 )
 import ssl
 from urllib.parse import urlparse
@@ -31,6 +32,7 @@ class ScrumBot:
         self.db = Database()
         self.channels = {}
         self.pending_reminders = {}
+        self.daily_report_posts = {}  # Store daily report post IDs for each channel
         
         # Initialize AI validator
         self.ai_validator = AIValidator(
@@ -367,6 +369,9 @@ class ScrumBot:
             
             print(f"\nProcessing {len(self.channels)} channels...")
             
+            # Clear previous daily report posts
+            self.daily_report_posts.clear()
+            
             for channel_id, channel_info in self.channels.items():
                 try:
                     channel_name = channel_info.get('name', '')
@@ -400,6 +405,13 @@ class ScrumBot:
                             'message': message
                         })
                         print(f"✅ Message sent successfully to {channel_name}! Post ID: {post['id']}")
+                        
+                        # Store the post ID for this channel
+                        self.daily_report_posts[channel_id] = {
+                            'post_id': post['id'],
+                            'channel_name': channel_name
+                        }
+                        
                     except Exception as e:
                         print(f"❌ Error sending message: {str(e)}")
                         print(f"Full error: {traceback.format_exc()}")
@@ -427,11 +439,27 @@ class ScrumBot:
             current_time = datetime.now(TIMEZONE)
             date_str = current_time.strftime("%A, %B %d, %Y")
             
-            # Add date to the reminder message
+            # Find the channel(s) where this user needs to report
+            user_channels = []
+            for channel_id, report_info in self.daily_report_posts.items():
+                channel_info = self.channels.get(channel_id, {})
+                if username in channel_info.get('members', []):
+                    channel_name = report_info['channel_name']
+                    post_id = report_info['post_id']
+                    # Include team name in the thread link
+                    thread_link = f"{SITE_URL}/{TEAM_NAME}/pl/{post_id}"
+                    user_channels.append(f"[{channel_name}]({thread_link})")
+            
+            # Add date and thread links to the reminder message
             message = (
                 f"{REMINDER_MESSAGE}"
                 f"⏰ **Daily Report Reminder for {date_str}**\n\n"
             )
+            
+            if user_channels:
+                message += "Link to the channel's report thread:\n"
+                for channel_link in user_channels:
+                    message += f"• {channel_link}\n"
             
             # Send reminder message
             self.driver.posts.create_post({

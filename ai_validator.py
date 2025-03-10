@@ -77,6 +77,7 @@ class AIValidator:
             - User allowed to said None or nothing if they haven't done anything yesterday or will do nothing today. They just need to explain. For example:"working on another project" is an accepted explaination.
             - User allowed to not report anything or skip blockers if there is no blockers.
             - Try to use friendly, natural, GenZ humor
+            - If user refused to report or rage, swear at the bot like "hell no", "fuck", "won't report", "đéo report", "không thích",... Swear back at them, threaten them to report (in a humorous way) and remind them missing report will affect their performance point.
             Only return the JSON, no other text."""
 
             print("Calling OpenRouter API...")
