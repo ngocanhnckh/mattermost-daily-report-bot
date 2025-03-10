@@ -33,8 +33,8 @@ Let's do it together! \n
 """
     # Fallback schedule settings
     TIMEZONE = timezone(timedelta(hours=7))  # GMT+7
-    REPORT_TIME = "11:00"  # 24-hour format in GMT+7
-    REMINDER_INTERVAL = 3  # hours
+    REPORT_TIME = "16:56"  # 24-hour format in GMT+7
+    REMINDER_INTERVAL = 0.01  # hours
 
 # Mattermost Configuration
 MATTERMOST_URL = os.getenv('MATTERMOST_URL', 'http://localhost:8065')
@@ -45,4 +45,10 @@ BOT_USERNAME = os.getenv('BOT_USERNAME', 'scrum-bot')
 EXCLUDED_USERS = os.getenv('EXCLUDED_USERS', '').split(',')
 
 # Database Configuration
-DB_PATH = 'daily_reports.db' 
+DB_PATH = 'daily_reports.db'
+
+# AI Validation Settings
+AI_VALIDATION_ENABLED = os.getenv('AI_VALIDATION_ENABLED', 'true').lower() == 'true'
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
+SITE_URL = os.getenv('SITE_URL', '')
+SITE_NAME = os.getenv('SITE_NAME', '') 

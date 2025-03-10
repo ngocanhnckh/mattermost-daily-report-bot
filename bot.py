@@ -4,10 +4,13 @@ from datetime import datetime, timedelta
 from threading import Thread
 from mattermostdriver import Driver
 from database import Database
+from ai_validator import AIValidator
+import traceback
 from config import (
     MATTERMOST_URL, BOT_TOKEN, BOT_USERNAME,
     REPORT_TIME, REMINDER_INTERVAL, EXCLUDED_USERS,
-    DAILY_REPORT_MESSAGE, REMINDER_MESSAGE, TIMEZONE
+    DAILY_REPORT_MESSAGE, REMINDER_MESSAGE, TIMEZONE,
+    AI_VALIDATION_ENABLED, OPENROUTER_API_KEY, SITE_URL, SITE_NAME
 )
 import ssl
 from urllib.parse import urlparse
@@ -28,6 +31,14 @@ class ScrumBot:
         self.db = Database()
         self.channels = {}
         self.pending_reminders = {}
+        
+        # Initialize AI validator
+        self.ai_validator = AIValidator(
+            api_key=OPENROUTER_API_KEY,
+            site_url=SITE_URL,
+            site_name=SITE_NAME,
+            enabled=AI_VALIDATION_ENABLED
+        )
 
     def start(self):
         print("Bot started")
@@ -64,17 +75,14 @@ class ScrumBot:
                             print(f"Successfully added channel: {channel.get('display_name', channel.get('name', 'Unknown'))}")
                         except Exception as e:
                             print(f"Error adding channel: {str(e)}")
-                            import traceback
                             print(f"Channel error traceback: {traceback.format_exc()}")
                             
                 except Exception as e:
                     print(f"Error processing team {team_id}: {str(e)}")
-                    import traceback
                     print(f"Team error traceback: {traceback.format_exc()}")
 
         except Exception as e:
             print(f"Error in initialization: {str(e)}")
-            import traceback
             print(f"Traceback: {traceback.format_exc()}")
 
         print("\n=== Channel Initialization Summary ===")
@@ -253,7 +261,6 @@ class ScrumBot:
         except Exception as e:
             print(f"Error in websocket event handler: {e}")
             print(f"Error type: {type(e)}")
-            import traceback
             print(f"Traceback: {traceback.format_exc()}")
             return await asyncio.sleep(0)  # Return an awaitable
 
@@ -261,26 +268,66 @@ class ScrumBot:
         try:
             channel_id = post['channel_id']
             username = self.driver.users.get_user(post['user_id'])['username']
+            message = post['message']
             
-            print(f"Handling report reply from {username} in channel {channel_id}")
+            print(f"\n=== Handling Report Reply ===")
+            print(f"Channel ID: {channel_id}")
+            print(f"Username: {username}")
+            print(f"Message: {message}")
+            print(f"AI Validation Enabled: {self.ai_validator.enabled}")
             
-            if not self.db.has_reported_today(channel_id, username):
-                channel = self.driver.channels.get_channel(channel_id)
-                self.db.add_report(
-                    channel_id,
-                    channel['name'],
-                    username,
-                    post['message']
-                )
-                print(f"Added report for {username}")
+            # Validate report with AI if enabled
+            print("\nStarting AI validation...")
+            validation_result = self.ai_validator.validate_report(message)
+            print(f"Validation result: {validation_result}")
+            
+            if validation_result["valid"]:
+                print("Report is valid, checking if user already reported today...")
+                if not self.db.has_reported_today(channel_id, username):
+                    print("User has not reported today, adding report to database...")
+                    channel = self.driver.channels.get_channel(channel_id)
+                    self.db.add_report(
+                        channel_id,
+                        channel['name'],
+                        username,
+                        message
+                    )
+                    print(f"Added report for {username}")
+                    
+                    # Remove from pending reminders if exists
+                    if username in self.pending_reminders:
+                        print(f"Removing {username} from pending reminders")
+                        self.pending_reminders.pop(username, None)
+                else:
+                    print(f"User {username} has already reported today")
+            else:
+                print("Report is not valid")
+            
+            # Send feedback to the user
+            if validation_result["message"]:
+                print(f"Sending feedback to user: {validation_result['message']}")
+                # Get the root_id from the post data
+                root_id = post.get('root_id', '')
+                if not root_id:
+                    root_id = post.get('id', '')  # If no root_id, use the post's own id
                 
-                # Remove from pending reminders if exists
-                if username in self.pending_reminders:
-                    print(f"Removing {username} from pending reminders")
-                    self.pending_reminders.pop(username, None)
+                print(f"Using root_id: {root_id}")
+                post_data = {
+                    'channel_id': channel_id,
+                    'message': f"@{username} {validation_result['message']}"
+                }
+                
+                # Only add root_id if it exists
+                if root_id:
+                    post_data['root_id'] = root_id
+                    
+                self.driver.posts.create_post(post_data)
+                print("Feedback sent successfully")
+                
         except Exception as e:
             print(f"Error handling report reply: {e}")
             print(f"Full error: {traceback.format_exc()}")
+            print(f"Post data: {post}")
 
     def _handle_channel_message(self, post):
         # Update channel info when bot receives a message
