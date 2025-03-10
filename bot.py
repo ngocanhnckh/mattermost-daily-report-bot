@@ -155,7 +155,8 @@ class ScrumBot:
         
         # Get all users who have reported today across all channels
         all_reported_users = set()
-        for channel_id in self.channels:
+        # Only check reports for channels that have an active daily report
+        for channel_id in self.daily_report_posts:
             reported_users = set(self.db.get_today_reports(channel_id))
             all_reported_users.update(reported_users)
         
@@ -164,8 +165,9 @@ class ScrumBot:
         # Track who we've reminded this round to avoid duplicates
         reminded_this_round = set()
         
-        # Check each channel
-        for channel_id, channel_info in self.channels.items():
+        # Only check channels that have an active daily report
+        for channel_id, report_info in self.daily_report_posts.items():
+            channel_info = self.channels.get(channel_id, {})
             print(f"\nChecking channel: {channel_info.get('name', 'Unknown')} ({channel_id})")
             if 'members' not in channel_info:
                 print("No members found in channel info")
@@ -269,6 +271,14 @@ class ScrumBot:
     def _handle_report_reply(self, post):
         try:
             channel_id = post['channel_id']
+            root_id = post.get('root_id', '')
+            
+            # Check if this reply is in a daily report thread
+            if channel_id not in self.daily_report_posts or \
+               self.daily_report_posts[channel_id]['post_id'] != root_id:
+                print(f"Ignoring reply - not in a daily report thread")
+                return
+            
             username = self.driver.users.get_user(post['user_id'])['username']
             message = post['message']
             
