@@ -4,3 +4,5 @@ python-dotenv==1.0.0
 sqlite3worker==1.1.7
 tabulate==0.9.0 
 openai
+flask==3.0.2
+flask-cors==4.0.0

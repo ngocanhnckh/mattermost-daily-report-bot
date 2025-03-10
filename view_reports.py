@@ -6,12 +6,25 @@ from tabulate import tabulate
 from collections import defaultdict
 
 def get_working_days(year, month):
-    """Get the number of working days (Monday-Saturday) in the given month."""
+    """Get the number of working days (Monday-Saturday) up to current date for current month,
+    or all working days for past months."""
     c = calendar.Calendar()
     working_days = 0
+    current_date = datetime.now().date()
+    
     for date in c.itermonthdates(year, month):
-        if date.month == month and date.weekday() < 6:  # Monday(0) to Saturday(5)
+        # Skip dates not in the target month
+        if date.month != month:
+            continue
+            
+        # For current month, only count days up to today
+        if year == current_date.year and month == current_date.month and date > current_date:
+            continue
+            
+        # Count Monday(0) to Saturday(5)
+        if date.weekday() < 6:
             working_days += 1
+            
     return working_days
 
 def get_monthly_reports(db_path, year, month):

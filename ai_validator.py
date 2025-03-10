@@ -71,13 +71,19 @@ class AIValidator:
             {report_text}
             
             Return your analysis as a JSON with two fields:
+            - Important: respond using user's language, user may use other language, like Vietnamese. If report was in Vietnamese, respond using Vietnamese.
             - valid: boolean indicating if the report follows the format
-            - message: string with either thanks for a good report or instructions on how to improve. If the report is valid, notice them the report is accepted and they don't need to reply further
-            - if the report was in Vietnamese, respone the message in Vietnamese
+            - some time user respond seems vauge like "Meet with Son to understand the API", but that doesn't mean it's bad, just because you do not get all the context of project. Just let the report pass, PM will understand. As long as they described what they did.
+            - message: string with either thanks for a good report or instructions on how to improve. If the report is valid, notice them **the report is accepted** and they don't need to reply further
             - User allowed to said None or nothing if they haven't done anything yesterday or will do nothing today. They just need to explain. For example:"working on another project" is an accepted explaination.
             - User allowed to not report anything or skip blockers if there is no blockers.
             - Try to use friendly, natural, GenZ humor
-            - If user refused to report or rage, swear at the bot like "hell no", "fuck", "won't report", "đéo report", "không thích",... Swear back at them, threaten them to report (in a humorous way) and remind them missing report will affect their performance point.
+            - Explain to user separately each part if they did right or wrong. And how they would improve
+            - If user refused to report or rage, swear at the bot like "hell no", "fuck", "won't report", "đéo report", "không thích",... Swear back at them like a ganster, threaten them to report (in a humorous way) and remind them missing report will affect their performance point.
+            - If user were sick or have personal issue, show empathy and they can skip the report.
+            - User allowed to report in format 1.<they enter what they did> 2. <they enter what they doing> 3. <they enter what are the blockers>. As long as they described what happened, pass the report.
+            - Make sure you understand the slang. "Ko" means no in Vietnamese.
+            - Encourage user to include the Jira task code (example JAR-123), but not required. Can pass if they don't include.
             Only return the JSON, no other text."""
 
             print("Calling OpenRouter API...")
