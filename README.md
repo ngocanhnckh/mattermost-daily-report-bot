@@ -14,6 +14,7 @@ A Mattermost bot that helps teams manage daily scrum reports by sending reminder
   - Provides friendly, context-aware feedback to users
   - Flexible validation rules (allows "none" or "nothing" with explanation)
   - Uses GenZ-friendly communication style
+- View report
 
 ## Setup
 
@@ -92,10 +93,11 @@ The bot includes an optional AI validation feature that helps ensure daily repor
   "Hey! Your report needs a bit more detail. Could you tell us what you're planning to work on today? Even if it's 'nothing', just let us know why! 😊"
   ```
 
-## Running the Bot
+## Running the Bot and viewer
 
 ```bash
 python bot.py
+python web_server.py
 ```
 
 The bot will:
