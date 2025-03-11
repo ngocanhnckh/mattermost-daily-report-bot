@@ -4,6 +4,7 @@ import calendar
 import argparse
 from tabulate import tabulate
 from collections import defaultdict
+import json
 
 def get_working_days(year, month):
     """Get the number of working days (Monday-Saturday) up to current date for current month,
@@ -49,56 +50,75 @@ def get_monthly_reports(db_path, year, month):
     """, (start_date, end_date))
     reports = cursor.fetchall()
 
-    # Get all unique users and their channels for this period
+    # Get all bot report requests for the month
     cursor.execute("""
-        SELECT DISTINCT username, channel_id, channel_name
-        FROM daily_reports 
-        WHERE report_date BETWEEN ? AND ?
+        SELECT channel_id, channel_name, request_date, requested_users
+        FROM bot_report_requests 
+        WHERE request_date BETWEEN ? AND ?
     """, (start_date, end_date))
-    user_channels = cursor.fetchall()
+    bot_requests = cursor.fetchall()
 
-    # Process users and their channels
-    users = {}  # Dictionary to store users and their channels
-    for username, channel_id, channel_name in user_channels:
-        if username not in users:
-            users[username] = set()
-        users[username].add(channel_id)
+    # Process bot requests into a structure tracking which users were requested on which days
+    channel_requests = {}  # {channel_id: {name: str, dates: {date: set(usernames)}}}
+    for channel_id, channel_name, request_date, requested_users_json in bot_requests:
+        if channel_id not in channel_requests:
+            channel_requests[channel_id] = {'name': channel_name, 'dates': {}}
+        
+        # Parse the JSON array of requested users
+        requested_users = json.loads(requested_users_json)
+        channel_requests[channel_id]['dates'][request_date] = set(requested_users)
 
     conn.close()
-    return reports, users
+    return reports, channel_requests
 
-def analyze_reports(reports, users, year, month):
+def analyze_reports(reports, channel_requests, year, month):
     """Analyze reports and generate statistics."""
-    working_days = get_working_days(year, month)
-    user_reports = defaultdict(lambda: defaultdict(int))  # Track reports per user per channel
-    user_channel_names = defaultdict(dict)  # Track channel names for each user
+    user_reports = defaultdict(lambda: defaultdict(list))  # {username: {channel_id: [(date, message)]}}
+    all_users = set()  # Track all users who were requested to report
     
-    # Count reports per user per channel and store channel names
+    # Organize reports by user and channel
     for username, date, message, channel_id, channel_name in reports:
-        user_reports[username][channel_id] += 1
-        user_channel_names[username][channel_id] = channel_name
+        user_reports[username][channel_id].append((date, message))
+
+    # Get all users who were requested to report
+    for channel_id, channel_info in channel_requests.items():
+        for date_users in channel_info['dates'].values():
+            all_users.update(date_users)
 
     # Calculate statistics
     stats = []
-    for username, channels in users.items():
-        num_channels = len(channels)
-        total_expected_reports = working_days * num_channels
-        total_submitted = sum(user_reports[username].values())
-        missed_reports = total_expected_reports - total_submitted
-        submission_rate = (total_submitted / total_expected_reports) * 100 if total_expected_reports > 0 else 0
-        
-        # Format channel information
-        channel_info = [
-            f"{user_channel_names[username].get(ch_id, 'Unknown')}: {user_reports[username][ch_id]}/{working_days}"
-            for ch_id in channels
-        ]
+    for username in all_users:
+        total_submitted = 0
+        total_expected = 0
+        channel_stats = []
+
+        # Check each channel where the user was requested to report
+        for channel_id, channel_info in channel_requests.items():
+            channel_name = channel_info['name']
+            
+            # Count days when this user was expected to report in this channel
+            expected = sum(1 for date_users in channel_info['dates'].values() 
+                         if username in date_users)
+            
+            if expected > 0:  # Only process channels where the user was requested
+                # Count submitted reports for this channel
+                submitted = len(user_reports[username][channel_id])
+                total_submitted += submitted
+                total_expected += expected
+                
+                # Add channel statistics
+                channel_stats.append(f"{channel_name}: {submitted}/{expected}")
+
+        # Calculate overall statistics
+        missed_reports = total_expected - total_submitted if total_expected > 0 else 0
+        submission_rate = (total_submitted / total_expected * 100) if total_expected > 0 else 0
         
         stats.append([
             username,
             total_submitted,
             missed_reports,
             f"{submission_rate:.1f}%",
-            ", ".join(channel_info)  # Add channel breakdown
+            ", ".join(channel_stats) if channel_stats else "No reports requested"
         ])
 
     return sorted(stats, key=lambda x: x[0])  # Sort by username
@@ -139,8 +159,8 @@ def main():
     args = parser.parse_args()
 
     try:
-        reports, users = get_monthly_reports(args.db, args.year, args.month)
-        stats = analyze_reports(reports, users, args.year, args.month)
+        reports, channel_requests = get_monthly_reports(args.db, args.year, args.month)
+        stats = analyze_reports(reports, channel_requests, args.year, args.month)
         display_reports(reports, stats, args.year, args.month)
     except sqlite3.Error as e:
         print(f"Database error: {e}")

@@ -394,9 +394,11 @@ class ScrumBot:
                     
                     # Create user tags for all members except excluded users and the bot
                     user_tags = []
+                    requested_users = []  # Track users who are being requested to report
                     for member in channel_info.get('members', []):
                         if member not in EXCLUDED_USERS and member != BOT_USERNAME:
                             user_tags.append(f"@{member}")
+                            requested_users.append(member)
                     
                     # Format the date
                     date_str = current_time.strftime("%A, %B %d, %Y")
@@ -424,6 +426,10 @@ class ScrumBot:
                         
                         # Initialize empty pending reminders for this channel
                         self.pending_reminders[channel_id] = {}
+                        
+                        # Record the bot's request in the database
+                        self.db.add_bot_request(channel_id, channel_name, requested_users)
+                        print(f"Recorded report request for {len(requested_users)} users in {channel_name}")
                         
                     except Exception as e:
                         print(f"❌ Error sending message: {str(e)}")

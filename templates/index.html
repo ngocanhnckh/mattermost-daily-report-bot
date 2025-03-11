@@ -22,6 +22,9 @@
             display: inline-block;
             margin-left: 1rem;
         }
+        select.form-control {
+            width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -30,16 +33,28 @@
         
         <div class="filters">
             <div class="row">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label for="monthPicker">Select Month:</label>
                     <input type="month" id="monthPicker" class="form-control">
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-2">
                     <label for="datePicker">Filter by Date:</label>
                     <input type="date" id="datePicker" class="form-control">
                 </div>
-                <div class="col-md-4 d-flex align-items-end">
-                    <button id="clearFilters" class="btn btn-secondary">Clear Filters</button>
+                <div class="col-md-2">
+                    <label for="userFilter">Filter by User:</label>
+                    <select id="userFilter" class="form-control">
+                        <option value="">All Users</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="channelFilter">Filter by Project:</label>
+                    <select id="channelFilter" class="form-control">
+                        <option value="">All Projects</option>
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button id="clearFilters" class="btn btn-secondary w-100">Clear Filters</button>
                 </div>
             </div>
         </div>
@@ -82,6 +97,8 @@
         $(document).ready(function() {
             const monthPicker = $('#monthPicker');
             const datePicker = $('#datePicker');
+            const userFilter = $('#userFilter');
+            const channelFilter = $('#channelFilter');
             const clearFilters = $('#clearFilters');
             let reportsTable, statsTable;
 
@@ -97,6 +114,32 @@
                 datePicker.attr('max', `${year}-${month}-${lastDay}`);
             }
 
+            function updateFilterDropdowns(data) {
+                // Store current selections
+                const selectedUser = userFilter.val();
+                const selectedChannel = channelFilter.val();
+
+                // Update user filter
+                userFilter.find('option:not(:first)').remove();
+                data.filters.usernames.forEach(username => {
+                    userFilter.append($('<option>', {
+                        value: username,
+                        text: username,
+                        selected: username === selectedUser
+                    }));
+                });
+
+                // Update channel filter
+                channelFilter.find('option:not(:first)').remove();
+                data.filters.channels.forEach(channel => {
+                    channelFilter.append($('<option>', {
+                        value: channel,
+                        text: channel,
+                        selected: channel === selectedChannel
+                    }));
+                });
+            }
+
             function initTables() {
                 reportsTable = $('#reportsTable').DataTable({
                     order: [[0, 'desc']],
@@ -105,7 +148,8 @@
                         { data: 'username' },
                         { data: 'channel_name' },
                         { data: 'message' }
-                    ]
+                    ],
+                    pageLength: 25  // Show more rows per page
                 });
 
                 statsTable = $('#statsTable').DataTable({
@@ -121,7 +165,8 @@
                                 return `<div class="channel-breakdown">${data}</div>`;
                             }
                         }
-                    ]
+                    ],
+                    pageLength: 50  // Show more rows per page
                 });
             }
 
@@ -129,30 +174,50 @@
                 const [year, month] = monthPicker.val().split('-');
                 let url = `/api/reports?year=${year}&month=${month}`;
                 
-                // Add date filter if selected
+                // Add filters if selected
                 if (datePicker.val()) {
                     url += `&date=${datePicker.val()}`;
+                }
+                if (userFilter.val()) {
+                    url += `&username=${userFilter.val()}`;
+                }
+                if (channelFilter.val()) {
+                    url += `&channel=${channelFilter.val()}`;
                 }
                 
                 fetch(url)
                     .then(response => response.json())
                     .then(data => {
+                        // Update tables first
                         reportsTable.clear().rows.add(data.reports).draw();
                         statsTable.clear().rows.add(data.statistics).draw();
+                        
+                        // Only update dropdowns if no specific filters are active
+                        if (!userFilter.val() && !channelFilter.val()) {
+                            updateFilterDropdowns(data);
+                        }
                     });
             }
 
             // Event handlers
             monthPicker.on('change', function() {
                 updateDatePickerRange();
-                datePicker.val(''); // Clear date filter
+                clearAllFilters();
                 loadReports();
             });
 
             datePicker.on('change', loadReports);
+            userFilter.on('change', loadReports);
+            channelFilter.on('change', loadReports);
+
+            function clearAllFilters() {
+                datePicker.val('');
+                userFilter.val('');
+                channelFilter.val('');
+            }
 
             clearFilters.on('click', function() {
-                datePicker.val('');
+                clearAllFilters();
                 loadReports();
             });
 
