@@ -7,16 +7,40 @@
     <style>
         .container { margin-top: 2rem; }
         .table-container { margin-bottom: 2rem; }
+        .filters { 
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+        .channel-breakdown {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+        .date-filter {
+            display: inline-block;
+            margin-left: 1rem;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Daily Reports Dashboard</h1>
+        <h1 class="mb-4">Daily Reports Dashboard</h1>
         
-        <div class="row mb-3">
-            <div class="col">
-                <label for="monthPicker">Select Month:</label>
-                <input type="month" id="monthPicker" class="form-control">
+        <div class="filters">
+            <div class="row">
+                <div class="col-md-4">
+                    <label for="monthPicker">Select Month:</label>
+                    <input type="month" id="monthPicker" class="form-control">
+                </div>
+                <div class="col-md-4">
+                    <label for="datePicker">Filter by Date:</label>
+                    <input type="date" id="datePicker" class="form-control">
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button id="clearFilters" class="btn btn-secondary">Clear Filters</button>
+                </div>
             </div>
         </div>
 
@@ -29,6 +53,7 @@
                         <th>Reports Submitted</th>
                         <th>Reports Missed</th>
                         <th>Submission Rate</th>
+                        <th>Channel Breakdown</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -42,6 +67,7 @@
                     <tr>
                         <th>Date</th>
                         <th>Username</th>
+                        <th>Channel</th>
                         <th>Report</th>
                     </tr>
                 </thead>
@@ -55,11 +81,21 @@
     <script>
         $(document).ready(function() {
             const monthPicker = $('#monthPicker');
+            const datePicker = $('#datePicker');
+            const clearFilters = $('#clearFilters');
             let reportsTable, statsTable;
 
             // Initialize with current month
             const now = new Date();
             monthPicker.val(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+            
+            // Set the date picker's min and max based on selected month
+            function updateDatePickerRange() {
+                const [year, month] = monthPicker.val().split('-');
+                const lastDay = new Date(year, month, 0).getDate();
+                datePicker.attr('min', `${year}-${month}-01`);
+                datePicker.attr('max', `${year}-${month}-${lastDay}`);
+            }
 
             function initTables() {
                 reportsTable = $('#reportsTable').DataTable({
@@ -67,6 +103,7 @@
                     columns: [
                         { data: 'date' },
                         { data: 'username' },
+                        { data: 'channel_name' },
                         { data: 'message' }
                     ]
                 });
@@ -77,15 +114,27 @@
                         { data: 'username' },
                         { data: 'submitted' },
                         { data: 'missed' },
-                        { data: 'rate' }
+                        { data: 'rate' },
+                        { 
+                            data: 'channels',
+                            render: function(data) {
+                                return `<div class="channel-breakdown">${data}</div>`;
+                            }
+                        }
                     ]
                 });
             }
 
             function loadReports() {
                 const [year, month] = monthPicker.val().split('-');
+                let url = `/api/reports?year=${year}&month=${month}`;
                 
-                fetch(`/api/reports?year=${year}&month=${month}`)
+                // Add date filter if selected
+                if (datePicker.val()) {
+                    url += `&date=${datePicker.val()}`;
+                }
+                
+                fetch(url)
                     .then(response => response.json())
                     .then(data => {
                         reportsTable.clear().rows.add(data.reports).draw();
@@ -93,10 +142,24 @@
                     });
             }
 
+            // Event handlers
+            monthPicker.on('change', function() {
+                updateDatePickerRange();
+                datePicker.val(''); // Clear date filter
+                loadReports();
+            });
+
+            datePicker.on('change', loadReports);
+
+            clearFilters.on('click', function() {
+                datePicker.val('');
+                loadReports();
+            });
+
+            // Initialize
+            updateDatePickerRange();
             initTables();
             loadReports();
-
-            monthPicker.on('change', loadReports);
         });
     </script>
 </body>

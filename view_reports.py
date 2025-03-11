@@ -40,22 +40,29 @@ def get_monthly_reports(db_path, year, month):
         end_date = datetime(year, month + 1, 1) - timedelta(days=1)
     end_date = end_date.strftime('%Y-%m-%d')
 
-    # Get all reports for the month
+    # Get all reports for the month including channel information
     cursor.execute("""
-        SELECT username, report_date, message 
+        SELECT username, report_date, message, channel_id, channel_name
         FROM daily_reports 
         WHERE report_date BETWEEN ? AND ?
         ORDER BY report_date, username
     """, (start_date, end_date))
     reports = cursor.fetchall()
 
-    # Get unique users who have reported at least once
+    # Get all unique users and their channels for this period
     cursor.execute("""
-        SELECT DISTINCT username 
+        SELECT DISTINCT username, channel_id, channel_name
         FROM daily_reports 
         WHERE report_date BETWEEN ? AND ?
     """, (start_date, end_date))
-    users = [user[0] for user in cursor.fetchall()]
+    user_channels = cursor.fetchall()
+
+    # Process users and their channels
+    users = {}  # Dictionary to store users and their channels
+    for username, channel_id, channel_name in user_channels:
+        if username not in users:
+            users[username] = set()
+        users[username].add(channel_id)
 
     conn.close()
     return reports, users
@@ -63,26 +70,38 @@ def get_monthly_reports(db_path, year, month):
 def analyze_reports(reports, users, year, month):
     """Analyze reports and generate statistics."""
     working_days = get_working_days(year, month)
-    user_reports = defaultdict(list)
+    user_reports = defaultdict(lambda: defaultdict(int))  # Track reports per user per channel
+    user_channel_names = defaultdict(dict)  # Track channel names for each user
     
-    # Organize reports by user
-    for username, date, message in reports:
-        user_reports[username].append((date, message))
+    # Count reports per user per channel and store channel names
+    for username, date, message, channel_id, channel_name in reports:
+        user_reports[username][channel_id] += 1
+        user_channel_names[username][channel_id] = channel_name
 
     # Calculate statistics
     stats = []
-    for user in sorted(users):
-        reports_submitted = len(user_reports[user])
-        missed_reports = working_days - reports_submitted
-        submission_rate = (reports_submitted / working_days) * 100 if working_days > 0 else 0
+    for username, channels in users.items():
+        num_channels = len(channels)
+        total_expected_reports = working_days * num_channels
+        total_submitted = sum(user_reports[username].values())
+        missed_reports = total_expected_reports - total_submitted
+        submission_rate = (total_submitted / total_expected_reports) * 100 if total_expected_reports > 0 else 0
+        
+        # Format channel information
+        channel_info = [
+            f"{user_channel_names[username].get(ch_id, 'Unknown')}: {user_reports[username][ch_id]}/{working_days}"
+            for ch_id in channels
+        ]
+        
         stats.append([
-            user,
-            reports_submitted,
+            username,
+            total_submitted,
             missed_reports,
-            f"{submission_rate:.1f}%"
+            f"{submission_rate:.1f}%",
+            ", ".join(channel_info)  # Add channel breakdown
         ])
 
-    return stats
+    return sorted(stats, key=lambda x: x[0])  # Sort by username
 
 def display_reports(reports, stats, year, month):
     """Display the reports and statistics in a formatted way."""
@@ -94,17 +113,17 @@ def display_reports(reports, stats, year, month):
 
     # Display statistics
     print("Report Submission Statistics:")
-    headers = ["Username", "Reports Submitted", "Reports Missed", "Submission Rate"]
+    headers = ["Username", "Reports Submitted", "Reports Missed", "Submission Rate", "Channel Breakdown"]
     print(tabulate(stats, headers=headers, tablefmt="grid"))
 
     # Display detailed reports
     print(f"\nDetailed Reports for {month_name} {year}:")
     current_date = None
-    for username, date, message in sorted(reports, key=lambda x: (x[1], x[0])):
+    for username, date, message, channel_id, channel_name in sorted(reports, key=lambda x: (x[1], x[0])):
         if date != current_date:
             print(f"\n[{date}]")
             current_date = date
-        print(f"- {username}:")
+        print(f"- {username} ({channel_name}):")
         for line in message.split('\n'):
             print(f"  {line}")
 

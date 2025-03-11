@@ -31,7 +31,7 @@ class ScrumBot:
         })
         self.db = Database()
         self.channels = {}
-        self.pending_reminders = {}
+        self.pending_reminders = {}  # Format: {channel_id: {username: last_reminder_time}}
         self.daily_report_posts = {}  # Store daily report post IDs for each channel
         
         # Initialize AI validator
@@ -153,22 +153,22 @@ class ScrumBot:
         print("\n=== Checking Reminders ===")
         print(f"Current time: {current_time}")
         
-        # Get all users who have reported today across all channels
-        all_reported_users = set()
-        # Only check reports for channels that have an active daily report
-        for channel_id in self.daily_report_posts:
-            reported_users = set(self.db.get_today_reports(channel_id))
-            all_reported_users.update(reported_users)
-        
-        print(f"Users who have reported today: {all_reported_users}")
-        
-        # Track who we've reminded this round to avoid duplicates
+        # Track who we've reminded this round to avoid duplicates across channels
         reminded_this_round = set()
         
         # Only check channels that have an active daily report
         for channel_id, report_info in self.daily_report_posts.items():
             channel_info = self.channels.get(channel_id, {})
             print(f"\nChecking channel: {channel_info.get('name', 'Unknown')} ({channel_id})")
+            
+            # Initialize pending reminders for this channel if not exists
+            if channel_id not in self.pending_reminders:
+                self.pending_reminders[channel_id] = {}
+            
+            # Get users who have reported in this specific channel today
+            reported_users_in_channel = set(self.db.get_today_reports(channel_id))
+            print(f"Users who have reported in this channel today: {reported_users_in_channel}")
+            
             if 'members' not in channel_info:
                 print("No members found in channel info")
                 continue
@@ -181,16 +181,15 @@ class ScrumBot:
                     print(f"Skipping {member} - already reminded this round or excluded")
                     continue
                 
-                # If user has reported, remove them from pending reminders and skip
-                if member in all_reported_users:
-                    print(f"Skipping {member} - has reported today")
-                    if member in self.pending_reminders:
-                        print(f"Removing {member} from pending reminders")
-                        self.pending_reminders.pop(member, None)
+                # If user has reported in this channel, remove them from this channel's pending reminders
+                if member in reported_users_in_channel:
+                    print(f"Skipping {member} - has reported in this channel today")
+                    if member in self.pending_reminders[channel_id]:
+                        print(f"Removing {member} from pending reminders for channel {channel_id}")
+                        self.pending_reminders[channel_id].pop(member, None)
                     continue
 
-                print(f"\nChecking member: {member}")
-                reminder_key = member  # Using username as key
+                print(f"\nChecking member: {member} for channel: {channel_id}")
                 
                 report_time = datetime.strptime(REPORT_TIME, "%H:%M").time()
                 report_datetime = datetime.combine(current_time.date(), report_time)
@@ -198,18 +197,18 @@ class ScrumBot:
                 
                 # Use REMINDER_INTERVAL for first reminder too
                 if current_time >= report_datetime + timedelta(hours=REMINDER_INTERVAL):
-                    print(f"Time to send/update reminder for {member}")
-                    if reminder_key not in self.pending_reminders:
-                        print(f"First reminder for {member}")
-                        self.pending_reminders[reminder_key] = current_time
+                    print(f"Time to send/update reminder for {member} in channel {channel_id}")
+                    if member not in self.pending_reminders[channel_id]:
+                        print(f"First reminder for {member} in channel {channel_id}")
+                        self.pending_reminders[channel_id][member] = current_time
                         self._send_reminder_dm(member)
                         reminded_this_round.add(member)
                     else:
-                        last_reminder = self.pending_reminders[reminder_key]
+                        last_reminder = self.pending_reminders[channel_id][member]
                         # Use REMINDER_INTERVAL and >= for subsequent reminders
                         if current_time >= last_reminder + timedelta(hours=REMINDER_INTERVAL):
-                            print(f"Follow-up reminder for {member}")
-                            self.pending_reminders[reminder_key] = current_time
+                            print(f"Follow-up reminder for {member} in channel {channel_id}")
+                            self.pending_reminders[channel_id][member] = current_time
                             self._send_reminder_dm(member)
                             reminded_this_round.add(member)
                         else:
@@ -306,10 +305,10 @@ class ScrumBot:
                     )
                     print(f"Added report for {username}")
                     
-                    # Remove from pending reminders if exists
-                    if username in self.pending_reminders:
-                        print(f"Removing {username} from pending reminders")
-                        self.pending_reminders.pop(username, None)
+                    # Remove from pending reminders for this specific channel if exists
+                    if channel_id in self.pending_reminders and username in self.pending_reminders[channel_id]:
+                        print(f"Removing {username} from pending reminders for channel {channel_id}")
+                        self.pending_reminders[channel_id].pop(username, None)
                 else:
                     print(f"User {username} has already reported today")
             else:
@@ -379,8 +378,9 @@ class ScrumBot:
             
             print(f"\nProcessing {len(self.channels)} channels...")
             
-            # Clear previous daily report posts
+            # Clear previous daily report posts and pending reminders
             self.daily_report_posts.clear()
+            self.pending_reminders.clear()
             
             for channel_id, channel_info in self.channels.items():
                 try:
@@ -422,12 +422,12 @@ class ScrumBot:
                             'channel_name': channel_name
                         }
                         
+                        # Initialize empty pending reminders for this channel
+                        self.pending_reminders[channel_id] = {}
+                        
                     except Exception as e:
                         print(f"❌ Error sending message: {str(e)}")
                         print(f"Full error: {traceback.format_exc()}")
-                    
-                    # Initialize empty pending reminders for this channel
-                    self.pending_reminders[channel_id] = []
                     
                 except Exception as e:
                     print(f"Error processing channel {channel_info.get('name', 'Unknown')}: {str(e)}")
@@ -449,34 +449,41 @@ class ScrumBot:
             current_time = datetime.now(TIMEZONE)
             date_str = current_time.strftime("%A, %B %d, %Y")
             
-            # Find the channel(s) where this user needs to report
-            user_channels = []
+            # Find the channels where this user needs to report
+            user_pending_channels = []
             for channel_id, report_info in self.daily_report_posts.items():
                 channel_info = self.channels.get(channel_id, {})
                 if username in channel_info.get('members', []):
-                    channel_name = report_info['channel_name']
-                    post_id = report_info['post_id']
-                    # Include team name in the thread link
-                    thread_link = f"{SITE_URL}/{TEAM_NAME}/pl/{post_id}"
-                    user_channels.append(f"[{channel_name}]({thread_link})")
+                    # Check if user has reported in this channel
+                    reported_users = set(self.db.get_today_reports(channel_id))
+                    if username not in reported_users:
+                        channel_name = report_info['channel_name']
+                        post_id = report_info['post_id']
+                        # Include team name in the thread link
+                        thread_link = f"{SITE_URL}/{TEAM_NAME}/pl/{post_id}"
+                        user_pending_channels.append(f"[{channel_name}]({thread_link})")
             
-            # Add date and thread links to the reminder message
-            message = (
-                f"{REMINDER_MESSAGE}"
-                f"⏰ **Daily Report Reminder for {date_str}**\n\n"
-            )
-            
-            if user_channels:
-                message += "Link to the channel's report thread:\n"
-                for channel_link in user_channels:
+            # Only send reminder if there are pending channels
+            if user_pending_channels:
+                # Add date and thread links to the reminder message
+                message = (
+                    f"{REMINDER_MESSAGE}"
+                    f"⏰ **Daily Report Reminder for {date_str}**\n\n"
+                    f"You still need to submit your daily report in the following channels:\n"
+                )
+                
+                for channel_link in user_pending_channels:
                     message += f"• {channel_link}\n"
-            
-            # Send reminder message
-            self.driver.posts.create_post({
-                'channel_id': dm_channel['id'],
-                'message': message
-            })
-            print(f"Reminder sent to {username}")
+                
+                # Send reminder message
+                self.driver.posts.create_post({
+                    'channel_id': dm_channel['id'],
+                    'message': message
+                })
+                print(f"Reminder sent to {username} for {len(user_pending_channels)} pending channels")
+            else:
+                print(f"No pending channels to remind {username} about")
+                
         except Exception as e:
             print(f"Error sending reminder to {username}: {str(e)}")
 
