@@ -80,7 +80,7 @@ class AIValidator:
                 
                 Remember:
                 - Some time user respond seems vauge like "Done the CRUD API of User", "continue fixing the feedback bug", Just let the report pass / accept the report, PM will understand because he know the context. As long as they described what they did, you don't need to understand it.
-                - If user say something like "Nothing, my work already done", let them pass the report, since all their tasks for the project already done.
+                - If user say something like "Nothing, my work already done", let them pass the report without checking for all the parts, since all their tasks for the project already done.
                 - Important: respond using user's language, user may use other language, like Vietnamese. Ex. If message was in Vietnamese, respond using Vietnamese. If message was English, respond using English.
                 - If user were sick or have personal issue, show empathy and accept the report.
                 - User allowed to said None or nothing if they haven't done anything yesterday or will do nothing today. They just need to explain. For example:"working on another project" is an accepted explaination.
