@@ -11,12 +11,15 @@ from config import (
     REPORT_TIME, REMINDER_INTERVAL, EXCLUDED_USERS,
     DAILY_REPORT_MESSAGE, REMINDER_MESSAGE, TIMEZONE,
     AI_VALIDATION_ENABLED, OPENROUTER_API_KEY, SITE_URL, SITE_NAME,
-    TEAM_NAME
+    TEAM_NAME, REPORT_DEADLINE_TIME, USER_MAPPINGS, CHANNEL_MAPPINGS
 )
 import ssl
 from urllib.parse import urlparse
 import json
 import asyncio
+from jira_service import JiraService
+from message_analyzer import MessageAnalyzer
+from typing import List, Dict
 
 class ScrumBot:
     def __init__(self):
@@ -36,6 +39,15 @@ class ScrumBot:
         
         # Initialize AI validator
         self.ai_validator = AIValidator(
+            api_key=OPENROUTER_API_KEY,
+            site_url=SITE_URL,
+            site_name=SITE_NAME,
+            enabled=AI_VALIDATION_ENABLED
+        )
+
+        # Initialize new services
+        self.jira_service = JiraService()
+        self.message_analyzer = MessageAnalyzer(
             api_key=OPENROUTER_API_KEY,
             site_url=SITE_URL,
             site_name=SITE_NAME,
@@ -153,68 +165,100 @@ class ScrumBot:
         print("\n=== Checking Reminders ===")
         print(f"Current time: {current_time}")
         
-        # Track who we've reminded this round to avoid duplicates across channels
-        reminded_this_round = set()
+        # Check if it's deadline time
+        deadline_time = datetime.strptime(REPORT_DEADLINE_TIME, "%H:%M").time()
+        is_deadline = current_time.time() >= deadline_time
         
-        # Only check channels that have an active daily report
         for channel_id, report_info in self.daily_report_posts.items():
             channel_info = self.channels.get(channel_id, {})
-            print(f"\nChecking channel: {channel_info.get('name', 'Unknown')} ({channel_id})")
+            channel_name = channel_info.get('name', 'Unknown')
             
-            # Initialize pending reminders for this channel if not exists
-            if channel_id not in self.pending_reminders:
-                self.pending_reminders[channel_id] = {}
+            # Get Jira project code for this channel
+            jira_project = CHANNEL_MAPPINGS.get(channel_name, {}).get('jira_project')
+            print(f"\nProcessing channel: {channel_name} (Jira: {jira_project})")
             
-            # Get users who have reported in this specific channel today
-            reported_users_in_channel = set(self.db.get_today_reports(channel_id))
-            print(f"Users who have reported in this channel today: {reported_users_in_channel}")
-            
-            if 'members' not in channel_info:
-                print("No members found in channel info")
-                continue
-            
-            for member in channel_info['members']:
-                # Skip if we've already reminded this user in this round or if they're excluded/bot
-                if (member in reminded_this_round or 
-                    member in EXCLUDED_USERS or 
-                    member == BOT_USERNAME):
-                    print(f"Skipping {member} - already reminded this round or excluded")
+            for member in channel_info.get('members', []):
+                if member in EXCLUDED_USERS or member == BOT_USERNAME:
                     continue
-                
-                # If user has reported in this channel, remove them from this channel's pending reminders
-                if member in reported_users_in_channel:
-                    print(f"Skipping {member} - has reported in this channel today")
-                    if member in self.pending_reminders[channel_id]:
-                        print(f"Removing {member} from pending reminders for channel {channel_id}")
-                        self.pending_reminders[channel_id].pop(member, None)
+                    
+                # Get user's Jira mapping
+                user_info = USER_MAPPINGS.get(member)
+                if not user_info:
+                    print(f"No Jira mapping found for user {member}")
                     continue
-
-                print(f"\nChecking member: {member} for channel: {channel_id}")
+                    
+                print(f"\nChecking tasks for {member} ({user_info['jira_username']})")
                 
-                report_time = datetime.strptime(REPORT_TIME, "%H:%M").time()
-                report_datetime = datetime.combine(current_time.date(), report_time)
-                report_datetime = report_datetime.replace(tzinfo=TIMEZONE)
+                # Get active tasks
+                tasks = self.jira_service.get_user_active_tasks(
+                    user_info['jira_username'],
+                    jira_project
+                )
                 
-                # Use REMINDER_INTERVAL for first reminder too
-                if current_time >= report_datetime + timedelta(hours=REMINDER_INTERVAL):
-                    print(f"Time to send/update reminder for {member} in channel {channel_id}")
-                    if member not in self.pending_reminders[channel_id]:
-                        print(f"First reminder for {member} in channel {channel_id}")
-                        self.pending_reminders[channel_id][member] = current_time
-                        self._send_reminder_dm(member)
-                        reminded_this_round.add(member)
+                if is_deadline and not self.db.has_reported_today(channel_id, member):
+                    print(f"Deadline reached for {member}, generating AI report...")
+                    messages = self._get_user_recent_messages(
+                        channel_id, member
+                    )
+                    
+                    if messages:
+                        ai_report = self.message_analyzer.generate_report(
+                            member, messages, tasks
+                        )
+                        if ai_report:
+                            self._send_ai_generated_report(
+                                channel_id,
+                                member,
+                                ai_report,
+                                self.daily_report_posts[channel_id]['post_id']
+                            )
                     else:
-                        last_reminder = self.pending_reminders[channel_id][member]
-                        # Use REMINDER_INTERVAL and >= for subsequent reminders
-                        if current_time >= last_reminder + timedelta(hours=REMINDER_INTERVAL):
-                            print(f"Follow-up reminder for {member} in channel {channel_id}")
-                            self.pending_reminders[channel_id][member] = current_time
-                            self._send_reminder_dm(member)
-                            reminded_this_round.add(member)
-                        else:
-                            print(f"Too soon for next reminder. Last reminder was at {last_reminder}")
-                else:
-                    print(f"Too soon to send reminder. Need to wait until {report_datetime + timedelta(hours=REMINDER_INTERVAL)}")
+                        print(f"No recent messages found for {member}, skipping AI report")
+                
+                elif tasks:  # Regular reminder with task context
+                    # Identify urgent tasks (due within 1 day)
+                    urgent_tasks = [
+                        task for task in tasks
+                        if task['end_date'] and 
+                        task['end_date'].date() <= (current_time + timedelta(days=1)).date()
+                    ]
+                    
+                    self._send_task_reminder(
+                        member,
+                        tasks,
+                        urgent_tasks,
+                        channel_id
+                    )
+
+    def _get_user_recent_messages(self, channel_id: str, username: str) -> List[str]:
+        """Get user's messages from the last 2 days."""
+        try:
+            # Calculate start time (beginning of yesterday)
+            start_time = int((datetime.now(TIMEZONE) - timedelta(days=1))
+                           .replace(hour=0, minute=0, second=0)
+                           .timestamp() * 1000)
+            
+            # Get user ID
+            user = self.driver.users.get_user_by_username(username)
+            
+            # Get posts
+            posts = self.driver.posts.get_posts_for_channel(channel_id)
+            
+            # Filter posts by user and time
+            user_messages = []
+            for post in posts['posts'].values():
+                post_time = datetime.fromtimestamp(post['create_at']/1000, TIMEZONE)
+                if (post['user_id'] == user['id'] and 
+                    post_time >= datetime.fromtimestamp(start_time/1000, TIMEZONE)):
+                    user_messages.append(post['message'])
+            
+            print(f"Found {len(user_messages)} recent messages for {username}")
+            return user_messages
+            
+        except Exception as e:
+            print(f"Error getting recent messages: {e}")
+            print(f"Full error: {traceback.format_exc()}")
+            return []
 
     async def _handle_websocket_event(self, event):
         try:
@@ -371,14 +415,12 @@ class ScrumBot:
             print(f"=== EXECUTING DAILY REPORT at {current_time} ===")
             print(f"Current weekday: {current_time.strftime('%A')}")
             
-            # Check if it's a reporting day
             if current_time.strftime("%A").lower() not in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']:
                 print(f"Skipping report - not a reporting day ({current_time.strftime('%A')})")
                 return
             
             print(f"\nProcessing {len(self.channels)} channels...")
             
-            # Clear previous daily report posts and pending reminders
             self.daily_report_posts.clear()
             self.pending_reminders.clear()
             
@@ -392,48 +434,117 @@ class ScrumBot:
                         print(f"Skipping channel: {channel_name}")
                         continue
                     
-                    # Create user tags for all members except excluded users and the bot
-                    user_tags = []
-                    requested_users = []  # Track users who are being requested to report
+                    # Get Jira project code for this channel
+                    channel_mapping = CHANNEL_MAPPINGS.get(channel_name)
+                    if not channel_mapping:
+                        print(f"No Jira mapping found for channel {channel_name}, skipping")
+                        continue
+                        
+                    jira_project = channel_mapping.get('jira_project')
+                    if not jira_project:
+                        print(f"No Jira project code found for channel {channel_name}, skipping")
+                        continue
+                    
+                    print(f"Found Jira project mapping: {channel_name} -> {jira_project}")
+                    
+                    # Track users with tasks
+                    users_with_tasks = []
+                    task_messages = []
+                    
+                    # Check tasks for each member
                     for member in channel_info.get('members', []):
-                        if member not in EXCLUDED_USERS and member != BOT_USERNAME:
-                            user_tags.append(f"@{member}")
-                            requested_users.append(member)
+                        if member in EXCLUDED_USERS or member == BOT_USERNAME:
+                            print(f"Skipping excluded user: {member}")
+                            continue
+                        
+                        # Get user's Jira mapping
+                        user_info = USER_MAPPINGS.get(member)
+                        if not user_info:
+                            print(f"No Jira mapping found for user {member}, skipping")
+                            continue
+                            
+                        jira_username = user_info.get('jira_username')
+                        if not jira_username:
+                            print(f"No Jira username found for user {member}, skipping")
+                            continue
+                        
+                        print(f"\nChecking tasks for {member} ({jira_username})")
+                        
+                        # Get active tasks
+                        tasks = self.jira_service.get_user_active_tasks(jira_username, jira_project)
+                        
+                        if tasks:
+                            # Sort tasks by end date and status
+                            todo_tasks = [t for t in tasks if t['status'] == 'To Do']
+                            in_progress_tasks = [t for t in tasks if t['status'] == 'In Progress']
+                            
+                            for task_list in [todo_tasks, in_progress_tasks]:
+                                task_list.sort(key=lambda x: (
+                                    x['end_date'] if x['end_date'] else datetime.max,
+                                    x['key']
+                                ))
+                            
+                            users_with_tasks.append(member)
+                            user_tasks = []
+                            
+                            # Add in-progress tasks first
+                            for task in in_progress_tasks[:2]:
+                                urgent = ""
+                                if task['end_date'] and task['end_date'].date() <= (current_time + timedelta(days=1)).date():
+                                    urgent = "🚨 **URGENT**"
+                                user_tasks.append(
+                                    f"- [{task['key']}]({task['url']}): {task['summary']} "
+                                    f"({task['status']}) {urgent}"
+                                )
+                            
+                            # Add to-do tasks
+                            remaining_slots = 2 - len(user_tasks)
+                            for task in todo_tasks[:remaining_slots]:
+                                urgent = ""
+                                if task['end_date'] and task['end_date'].date() <= (current_time + timedelta(days=1)).date():
+                                    urgent = "🚨 **URGENT**"
+                                user_tasks.append(
+                                    f"- [{task['key']}]({task['url']}): {task['summary']} "
+                                    f"({task['status']}) {urgent}"
+                                )
+                            
+                            if user_tasks:
+                                task_messages.append(f"@{member}, please update these tasks:\n" + "\n".join(user_tasks))
                     
-                    # Format the date
-                    date_str = current_time.strftime("%A, %B %d, %Y")
-                    
-                    # Construct the message with date, user tags, and the configured message
-                    message = (
-                        f"## 🔔 **Daily Scrum Report for {date_str}**\n\n"
-                        f"{' '.join(user_tags)}\n\n"
-                        f"{DAILY_REPORT_MESSAGE}"
-                    )
-                    
-                    print(f"Attempting to send message to channel {channel_name}...")
-                    try:
+                    if users_with_tasks:
+                        # Construct the message
+                        date_str = current_time.strftime("%A, %B %d, %Y")
+                        message = (
+                            f"## 🔔 **Daily Scrum Report for {date_str}**\n\n"
+                            f"{' '.join(f'@{user}' for user in users_with_tasks)}\n\n"
+                        )
+                        message += DAILY_REPORT_MESSAGE
+                        
+                        if task_messages:
+                            message += "### Active Tasks:\n" + "\n\n".join(task_messages) + "\n\n"
+                            
+                        
+                        
+                        print(f"Sending daily report to channel {channel_name}")
                         post = self.driver.posts.create_post({
                             'channel_id': channel_id,
                             'message': message
                         })
-                        print(f"✅ Message sent successfully to {channel_name}! Post ID: {post['id']}")
                         
-                        # Store the post ID for this channel
+                        # Store the post ID
                         self.daily_report_posts[channel_id] = {
                             'post_id': post['id'],
                             'channel_name': channel_name
                         }
                         
-                        # Initialize empty pending reminders for this channel
+                        # Initialize pending reminders
                         self.pending_reminders[channel_id] = {}
                         
-                        # Record the bot's request in the database
-                        self.db.add_bot_request(channel_id, channel_name, requested_users)
-                        print(f"Recorded report request for {len(requested_users)} users in {channel_name}")
-                        
-                    except Exception as e:
-                        print(f"❌ Error sending message: {str(e)}")
-                        print(f"Full error: {traceback.format_exc()}")
+                        # Record the request
+                        self.db.add_bot_request(channel_id, channel_name, users_with_tasks)
+                        print(f"Recorded report request for {len(users_with_tasks)} users in {channel_name}")
+                    else:
+                        print(f"No users with active tasks in {channel_name}, skipping")
                     
                 except Exception as e:
                     print(f"Error processing channel {channel_info.get('name', 'Unknown')}: {str(e)}")
@@ -441,9 +552,95 @@ class ScrumBot:
             
             print("\n=== Daily report execution completed ===")
             print("=" * 50)
+            
         except Exception as e:
             print(f"Critical error in send_daily_report: {str(e)}")
             print(f"Full error: {traceback.format_exc()}")
+
+    def _format_daily_report_message(self, channel_id: str, channel_name: str) -> tuple[str, list[str]]:
+        """Format the daily report message with user tasks.
+        Returns tuple of (message, tagged_users)"""
+        try:
+            date_str = datetime.now(TIMEZONE).strftime("%A, %B %d, %Y")
+            tagged_users = []
+            user_task_mentions = []
+
+            # Get Jira project code for this channel
+            jira_project = CHANNEL_MAPPINGS.get(channel_name, {}).get('jira_project')
+            print(f"\nGetting tasks for channel {channel_name} (Jira: {jira_project})")
+
+            if jira_project and self.jira_service.enabled:
+                for member in self.channels[channel_id].get('members', []):
+                    if member in EXCLUDED_USERS or member == BOT_USERNAME:
+                        continue
+
+                    # Get user's Jira mapping
+                    user_info = USER_MAPPINGS.get(member, {})
+                    jira_username = user_info.get('jira_username', member)
+                    
+                    # Get active tasks
+                    tasks = self.jira_service.get_user_active_tasks(jira_username, jira_project)
+                    
+                    # Sort tasks by end date and status
+                    todo_tasks = [t for t in tasks if t['status'] == 'To Do']
+                    in_progress_tasks = [t for t in tasks if t['status'] == 'In Progress']
+                    
+                    # Sort by end date if available
+                    for task_list in [todo_tasks, in_progress_tasks]:
+                        task_list.sort(key=lambda x: (
+                            x['end_date'] if x['end_date'] else datetime.max,
+                            x['key']
+                        ))
+
+                    if tasks:  # Only tag users with active tasks
+                        tagged_users.append(member)
+                        user_mention = f"@{member}"
+                        task_mentions = []
+                        
+                        # Add in-progress tasks first
+                        for task in in_progress_tasks[:2]:  # Max 2 tasks
+                            urgent = ""
+                            if task['end_date']:
+                                if task['end_date'].date() <= (datetime.now(TIMEZONE) + timedelta(days=1)).date():
+                                    urgent = "🚨 **URGENT**"
+                            task_mentions.append(
+                                f"- [{task['key']}]({task['url']}): {task['summary']} "
+                                f"({task['status']}) {urgent}"
+                            )
+                        
+                        # Add to-do tasks
+                        remaining_slots = 2 - len(task_mentions)
+                        for task in todo_tasks[:remaining_slots]:
+                            urgent = ""
+                            if task['end_date']:
+                                if task['end_date'].date() <= (datetime.now(TIMEZONE) + timedelta(days=1)).date():
+                                    urgent = "🚨 **URGENT**"
+                            task_mentions.append(
+                                f"- [{task['key']}]({task['url']}): {task['summary']} "
+                                f"({task['status']}) {urgent}"
+                            )
+                        
+                        if task_mentions:
+                            user_task_mentions.append(f"{user_mention}, please update these tasks:\n" + "\n".join(task_mentions))
+
+            # Construct the final message
+            message = (
+                f"## 🔔 **Daily Scrum Report for {date_str}**\n\n"
+                f"{' '.join(f'@{user}' for user in tagged_users)}\n\n"
+            )
+            
+            if user_task_mentions:
+                message += "### Active Tasks:\n" + "\n\n".join(user_task_mentions) + "\n\n"
+            
+            message += DAILY_REPORT_MESSAGE
+            
+            return message, tagged_users
+
+        except Exception as e:
+            print(f"Error formatting daily report message: {e}")
+            print(f"Full error: {traceback.format_exc()}")
+            # Return default message as fallback
+            return DAILY_REPORT_MESSAGE, []
 
     def _send_reminder_dm(self, username):
         try:
@@ -492,6 +689,104 @@ class ScrumBot:
                 
         except Exception as e:
             print(f"Error sending reminder to {username}: {str(e)}")
+
+    def _send_ai_generated_report(self, channel_id: str, username: str, ai_report: str, root_id: str):
+        """Send an AI-generated report as a reply in the daily report thread."""
+        try:
+            print(f"\n=== Sending AI-generated report for {username} ===")
+            
+            # Get channel info
+            channel = self.driver.channels.get_channel(channel_id)
+            print(f"Channel: {channel.get('name', 'Unknown')}")
+            
+            # Format the message
+            message = (
+                f"@{username} Since you haven't submitted a report yet, "
+                f"here's an AI-generated report based on your recent activities:\n\n"
+                f"{ai_report}\n\n"
+                f"_Note: This is an automated report. Please submit your own report if this is inaccurate._"
+            )
+            
+            # Send as a reply in the daily report thread
+            print("Sending AI report to Mattermost...")
+            post = self.driver.posts.create_post({
+                'channel_id': channel_id,
+                'message': message,
+                'root_id': root_id  # Use the provided root_id
+            })
+            
+            if post:
+                print("Storing AI report in database...")
+                self.db.add_report(
+                    channel_id=channel_id,
+                    channel_name=channel['name'],
+                    username=username,
+                    message=ai_report,
+                    is_ai_generated=True
+                )
+                print("AI report sent and stored successfully")
+            else:
+                print("Failed to create post in Mattermost")
+            
+        except Exception as e:
+            print(f"Error sending AI-generated report: {e}")
+            print(f"Full error: {traceback.format_exc()}")
+
+    def _send_task_reminder(self, username: str, tasks: List[Dict], urgent_tasks: List[Dict], channel_id: str):
+        """Send a reminder with task information to a user.
+        
+        Args:
+            username (str): The username to remind
+            tasks (List[Dict]): List of all active tasks
+            urgent_tasks (List[Dict]): List of urgent tasks (due within 1 day)
+            channel_id (str): The channel ID
+        """
+        try:
+            print(f"\n=== Sending task reminder to {username} ===")
+            
+            # Create or get DM channel
+            user = self.driver.users.get_user_by_username(username)
+            dm_channel = self.driver.channels.create_direct_message_channel([self.bot_id, user['id']])
+            
+            # Format the task information
+            task_info = []
+            
+            # Add urgent tasks first with warning emoji
+            for task in urgent_tasks:
+                due_date = task['end_date'].strftime('%Y-%m-%d') if task['end_date'] else 'No due date'
+                task_info.append(
+                    f"🚨 **URGENT** [{task['key']}]({task['url']}): {task['summary']}\n"
+                    f"   Status: {task['status']}, Due: {due_date}"
+                )
+            
+            # Add other tasks
+            other_tasks = [t for t in tasks if t not in urgent_tasks]
+            for task in other_tasks:
+                due_date = task['end_date'].strftime('%Y-%m-%d') if task['end_date'] else 'No due date'
+                task_info.append(
+                    f"• [{task['key']}]({task['url']}): {task['summary']}\n"
+                    f"   Status: {task['status']}, Due: {due_date}"
+                )
+            
+            # Format the message
+            message = (
+                f"{REMINDER_MESSAGE}\n\n"
+                f"Your active tasks:\n"
+                f"{chr(10).join(task_info)}\n\n"
+                f"Please reply in the daily report thread: {MATTERMOST_URL}/{TEAM_NAME}/pl/{self.daily_report_posts[channel_id]['post_id']}"
+            )
+            
+            # Send the reminder
+            self.driver.posts.create_post({
+                'channel_id': dm_channel['id'],
+                'message': message
+            })
+            
+            print(f"Reminder sent to {username} with {len(tasks)} tasks ({len(urgent_tasks)} urgent)")
+            
+        except Exception as e:
+            print(f"Error sending task reminder to {username}: {e}")
+            print(f"Full error: {traceback.format_exc()}")
 
 if __name__ == "__main__":
     bot = ScrumBot()

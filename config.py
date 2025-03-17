@@ -9,14 +9,22 @@ load_dotenv()
 try:
     with open('config.json', 'r') as f:
         config_json = json.load(f)
-        # Load messages
+        # Load existing messages and schedule
         DAILY_REPORT_MESSAGE = config_json['messages']['daily_report']
         REMINDER_MESSAGE = config_json['messages']['reminder']
-        
-        # Load schedule settings
         REPORT_TIME = config_json['schedule']['report_time']
         REMINDER_INTERVAL = config_json['schedule']['reminder_interval']
         TIMEZONE = timezone(timedelta(hours=config_json['schedule']['timezone']))
+        
+        # New configurations
+        REPORT_DEADLINE_TIME = config_json['schedule'].get('report_deadline_time', '17:00')
+        USER_MAPPINGS = config_json.get('users', {})
+        CHANNEL_MAPPINGS = config_json.get('channels', {})
+        
+        # Jira configuration
+        JIRA_URL = config_json.get('jira', {}).get('url', os.getenv('JIRA_URL'))
+        JIRA_TOKEN = config_json.get('jira', {}).get('token', os.getenv('JIRA_TOKEN'))
+
 except FileNotFoundError:
     # Fallback messages and settings in case config.json is not found
     DAILY_REPORT_MESSAGE = """
@@ -35,6 +43,9 @@ Let's do it together! \n
     TIMEZONE = timezone(timedelta(hours=7))  # GMT+7
     REPORT_TIME = "16:56"  # 24-hour format in GMT+7
     REMINDER_INTERVAL = 0.01  # hours
+    REPORT_DEADLINE_TIME = "17:00"
+    USER_MAPPINGS = {}
+    CHANNEL_MAPPINGS = {}
 
 # Mattermost Configuration
 MATTERMOST_URL = os.getenv('MATTERMOST_URL', 'http://localhost:8065')

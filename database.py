@@ -11,6 +11,8 @@ class Database:
     def _init_db(self):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
+            
+            # First create tables with new column
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS daily_reports (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,30 +21,49 @@ class Database:
                     username TEXT NOT NULL,
                     report_date DATE NOT NULL,
                     message TEXT NOT NULL,
+                    is_ai_generated BOOLEAN DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             
+            # Safely add column if it doesn't exist (SQLite specific approach)
+            try:
+                cursor.execute('ALTER TABLE daily_reports ADD COLUMN is_ai_generated BOOLEAN DEFAULT 0')
+            except sqlite3.OperationalError as e:
+                if 'duplicate column name' not in str(e).lower():
+                    raise e
+            
+            # Your existing bot_report_requests table creation
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS bot_report_requests (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     channel_id TEXT NOT NULL,
                     channel_name TEXT NOT NULL,
                     request_date DATE NOT NULL,
-                    requested_users TEXT NOT NULL,  -- JSON array of usernames
+                    requested_users TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             conn.commit()
 
-    def add_report(self, channel_id, channel_name, username, message):
+    def add_report(self, channel_id, channel_name, username, message, is_ai_generated=False):
+        """Add a report to the database.
+        
+        Args:
+            channel_id (str): The channel ID
+            channel_name (str): The channel name
+            username (str): The username
+            message (str): The report message
+            is_ai_generated (bool, optional): Whether this is an AI generated report
+        """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             today = datetime.now().date()
             cursor.execute('''
-                INSERT INTO daily_reports (channel_id, channel_name, username, report_date, message)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (channel_id, channel_name, username, today, message))
+                INSERT INTO daily_reports 
+                (channel_id, channel_name, username, report_date, message, is_ai_generated)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (channel_id, channel_name, username, today, message, is_ai_generated))
             conn.commit()
 
     def add_bot_request(self, channel_id, channel_name, requested_users):
