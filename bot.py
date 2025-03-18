@@ -11,7 +11,8 @@ from config import (
     REPORT_TIME, REMINDER_INTERVAL, EXCLUDED_USERS,
     DAILY_REPORT_MESSAGE, REMINDER_MESSAGE, TIMEZONE,
     AI_VALIDATION_ENABLED, OPENROUTER_API_KEY, SITE_URL, SITE_NAME,
-    TEAM_NAME, REPORT_DEADLINE_TIME, USER_MAPPINGS, CHANNEL_MAPPINGS
+    TEAM_NAME, REPORT_DEADLINE_TIME, USER_MAPPINGS, CHANNEL_MAPPINGS,
+    REMIND_TASK_MESSAGE
 )
 import ssl
 from urllib.parse import urlparse
@@ -196,14 +197,22 @@ class ScrumBot:
                 )
                 
                 if is_deadline and not self.db.has_reported_today(channel_id, member):
-                    print(f"Deadline reached for {member}, generating AI report...")
-                    messages = self._get_user_recent_messages(
-                        channel_id, member
+                    print(f"Deadline reached for {member}, checking activities...")
+                    
+                    # Get both messages and Jira updates
+                    messages = self._get_user_recent_messages(channel_id, member)
+                    recent_updates = self.jira_service.get_user_recent_updates(
+                        user_info['jira_username'],
+                        jira_project
                     )
                     
-                    if messages:
+                    # Generate report if we have either messages or Jira updates
+                    if messages or recent_updates:
                         ai_report = self.message_analyzer.generate_report(
-                            member, messages, tasks
+                            member,
+                            messages,
+                            tasks,
+                            recent_updates
                         )
                         if ai_report:
                             self._send_ai_generated_report(
@@ -213,7 +222,7 @@ class ScrumBot:
                                 self.daily_report_posts[channel_id]['post_id']
                             )
                     else:
-                        print(f"No recent messages found for {member}, skipping AI report")
+                        print(f"No recent activity found for {member}, skipping AI report")
                 
                 elif tasks:  # Regular reminder with task context
                     # Identify urgent tasks (due within 1 day)
@@ -504,12 +513,12 @@ class ScrumBot:
                                 if task['end_date'] and task['end_date'].date() <= (current_time + timedelta(days=1)).date():
                                     urgent = "🚨 **URGENT**"
                                 user_tasks.append(
-                                    f"- [{task['key']}]({task['url']}): {task['summary']} "
+                                    f"- [{task['key']}]({task['url']}) {task['summary']} "
                                     f"({task['status']}) {urgent}"
                                 )
                             
                             if user_tasks:
-                                task_messages.append(f"@{member}, please update these tasks:\n" + "\n".join(user_tasks))
+                                task_messages.append(f"--------------------------------\n @{member}, {REMIND_TASK_MESSAGE}\n" + "\n".join(user_tasks))
                     
                     if users_with_tasks:
                         # Construct the message
@@ -521,7 +530,8 @@ class ScrumBot:
                         message += DAILY_REPORT_MESSAGE
                         
                         if task_messages:
-                            message += "### Active Tasks:\n" + "\n\n".join(task_messages) + "\n\n"
+                            message += "\n---------------------------------------------------------\n"
+                            message += "\n### Task Updates:\n" + "\n\n".join(task_messages) + "\n\n"
                             
                         
                         
@@ -621,7 +631,7 @@ class ScrumBot:
                             )
                         
                         if task_mentions:
-                            user_task_mentions.append(f"{user_mention}, please update these tasks:\n" + "\n".join(task_mentions))
+                            user_task_mentions.append(f"{user_mention}, {REMIND_TASK_MESSAGE}:\n" + "\n".join(task_mentions))
 
             # Construct the final message
             message = (
@@ -630,7 +640,7 @@ class ScrumBot:
             )
             
             if user_task_mentions:
-                message += "### Active Tasks:\n" + "\n\n".join(user_task_mentions) + "\n\n"
+                message += "\n### Active Tasks:\n" + "\n\n".join(user_task_mentions) + "\n\n"
             
             message += DAILY_REPORT_MESSAGE
             
@@ -773,7 +783,7 @@ class ScrumBot:
                 f"{REMINDER_MESSAGE}\n\n"
                 f"Your active tasks:\n"
                 f"{chr(10).join(task_info)}\n\n"
-                f"Please reply in the daily report thread: {MATTERMOST_URL}/{TEAM_NAME}/pl/{self.daily_report_posts[channel_id]['post_id']}"
+                f"Please reply in the daily report thread: {SITE_URL}/{TEAM_NAME}/pl/{self.daily_report_posts[channel_id]['post_id']}"
             )
             
             # Send the reminder

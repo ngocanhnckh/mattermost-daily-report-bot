@@ -12,6 +12,7 @@ try:
         # Load existing messages and schedule
         DAILY_REPORT_MESSAGE = config_json['messages']['daily_report']
         REMINDER_MESSAGE = config_json['messages']['reminder']
+        REMIND_TASK_MESSAGE = config_json['messages']['remind_task']
         REPORT_TIME = config_json['schedule']['report_time']
         REMINDER_INTERVAL = config_json['schedule']['reminder_interval']
         TIMEZONE = timezone(timedelta(hours=config_json['schedule']['timezone']))

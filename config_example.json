@@ -1,11 +1,37 @@
 {
     "messages": {
-        "daily_report": "Please reply to this thread with your daily report including:\n1. What did you accomplish yesterday?\n2. What are you planning to do today?\n3. Any blockers or challenges?",
-        "reminder": "Hey, it seems you missed the daily report today, please submit your report as soon as possible. \n\nEven if you have done nothing, it's ok to report. \n\nFailure to report will affect your work performance and affect the whole team, please be advised! \n\nLet's do it together! \n"
+        "daily_report": "Ey yooo! Daily report nào các bạn ơi, **đừng quên để không ảnh hưởng đến năng suất** của team nhé! \nPlease reply to this thread with your daily report including:\n1. What did you accomplish yesterday? (Include **Jira Task code** is recommended)\n2. What are you planning to do today?\n3. Any blockers or challenges? \n If you done nothing yesterday or will do nothing today, you can just say 'None' or 'Nothing' but epxlain the reason",
+        "remind_task": "Please update these tasks: \n",
+        "reminder": "**Alo bro, bro quên à?**\n **It seems you missed the daily report today**, please submit your report as soon as possible. \n\nEven if you have done nothing, it's ok to report. \n\nFailure to report will affect your work performance and affect the whole team, please be advised! \n\nLet's do it together! \n"
     },
     "schedule": {
         "report_time": "11:00",
-        "reminder_interval": 3,
-        "timezone": 7
+        "reminder_interval": 6,
+        "timezone": 7,
+        "report_deadline_time": "22:00"
+    },
+    "users": {
+      "anh.nguyen": {
+        "jira_username": "anh.nguyen",
+        "phone": "+84123456789",
+        "bio": "Project Manager, AI Engineer, knows LLM, LangChain, Python, LangGraph"
+      },
+      "thanh.fishe": {
+        "jira_username": "thanh.fishe",
+        "phone": "+84121983433",
+        "bio": "Front-end Developer, Next.JS stack"
+      }
+    },
+    "channels": {
+      "test": {
+        "jira_project": "TES"
+      },
+      "test2": {
+        "jira_project": "TES"
+      }
+    },
+    "jira": {
+        "url": "https://jira.example.com",
+        "token": "MTQzMzMafgsdfgsdfsfdgfdgKAI1R0jIV"
     }
 } 
