@@ -12,7 +12,7 @@ from config import (
     DAILY_REPORT_MESSAGE, REMINDER_MESSAGE, TIMEZONE,
     AI_VALIDATION_ENABLED, OPENROUTER_API_KEY, SITE_URL, SITE_NAME,
     TEAM_NAME, REPORT_DEADLINE_TIME, USER_MAPPINGS, CHANNEL_MAPPINGS,
-    REMIND_TASK_MESSAGE
+    REMIND_TASK_MESSAGE, JIRA_URL
 )
 import ssl
 from urllib.parse import urlparse
@@ -46,8 +46,15 @@ class ScrumBot:
             enabled=AI_VALIDATION_ENABLED
         )
 
-        # Initialize new services
-        self.jira_service = JiraService()
+        # Initialize Jira service with the same AI parameters
+        self.jira_service = JiraService(
+            api_key=OPENROUTER_API_KEY,
+            site_url=SITE_URL,
+            site_name=SITE_NAME,
+            enabled=AI_VALIDATION_ENABLED
+        )
+
+        # Initialize message analyzer
         self.message_analyzer = MessageAnalyzer(
             api_key=OPENROUTER_API_KEY,
             site_url=SITE_URL,
@@ -455,6 +462,47 @@ class ScrumBot:
                         continue
                     
                     print(f"Found Jira project mapping: {channel_name} -> {jira_project}")
+                    
+                    # Step 1: Validate and update sprint tasks
+                    print("\nValidating sprint tasks before daily report...")
+                    member_mappings = {
+                        member: USER_MAPPINGS[member]['jira_username']
+                        for member in channel_info.get('members', [])
+                        if member not in EXCLUDED_USERS 
+                        and member != BOT_USERNAME 
+                        and member in USER_MAPPINGS
+                    }
+                    
+                    update_results = self.jira_service.validate_and_update_sprint_tasks(
+                        jira_project,
+                        member_mappings
+                    )
+                    
+                    # Send update report to channel if any tasks were updated
+                    if update_results.get('updated', 0) > 0:
+                        update_message = (
+                            f"🔄 **Sprint Task Updates**\n\n"
+                            f"Updated {update_results['updated']} tasks with missing information:\n\n"
+                        )
+                        for task in update_results['tasks']:
+                            # Add task update info with summary
+                            update_message += (
+                                f"### [{task['key']}]({JIRA_URL}/browse/{task['key']}): {task['summary']}\n"
+                                f"- Updated fields: {', '.join(task['updated_fields'])}\n"
+                            )
+                            
+                            # Add AI's reasoning if available
+                            if task.get('reasoning'):
+                                update_message += "\n**AI's Decision Making:**\n"
+                                for aspect, explanation in task['reasoning'].items():
+                                    aspect_title = aspect.replace('_', ' ').title()
+                                    update_message += f"- {aspect_title}: {explanation}\n"
+                            update_message += "\n"  # Add extra line break between tasks
+                        
+                        self.driver.posts.create_post({
+                            'channel_id': channel_id,
+                            'message': update_message
+                        })
                     
                     # Track users with tasks
                     users_with_tasks = []

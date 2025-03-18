@@ -93,6 +93,75 @@ The bot includes an optional AI validation feature that helps ensure daily repor
   "Hey! Your report needs a bit more detail. Could you tell us what you're planning to work on today? Even if it's 'nothing', just let us know why! 😊"
   ```
 
+## Jira Integration
+
+The bot now includes powerful Jira integration features that help teams manage their sprint tasks more effectively.
+
+### Features
+- Automatically validates and updates sprint tasks:
+  - Sets missing start/end dates
+  - Assigns unassigned tasks
+  - Adds original time estimates
+  - AI-powered task analysis for smart assignments and estimates
+- Shows active tasks in daily reports
+- Tracks task updates and progress
+- Provides AI reasoning for each task update decision
+- Sends urgent task reminders
+
+### Configuration
+Add Jira settings to your `config.json`:
+
+```json
+{
+    "jira": {
+        "url": "your_jira_instance_url",
+        "token": "your_jira_api_token"  // Get from Atlassian Account Settings
+    },
+    "users": {
+        "mattermost_username": {
+            "jira_username": "jira.username",
+            "phone": "+1234567890",  // Optional
+            "bio": "Frontend Developer"  // Used for AI task assignment
+        }
+    },
+    "channels": {
+        "mattermost-channel": {
+            "jira_project": "PROJ"  // Your Jira project code
+        }
+    }
+}
+```
+
+### Custom Field Configuration
+The bot automatically detects and uses your Jira custom fields for:
+- Start date
+- End date
+- Original Estimate
+
+No manual configuration needed - the bot will automatically detect these fields during initialization by looking for:
+- A field named "Start date"
+- A field named "End date"
+- The built-in timetracking field for Original Estimate
+
+### AI Task Management
+The bot uses AI to:
+1. Analyze task descriptions and requirements
+2. Suggest appropriate assignees based on:
+   - Team member roles/expertise (from their bio)
+   - Current workload
+   - Task type (frontend/backend/AI)
+3. Estimate completion time based on:
+   - Task complexity
+   - Similar past tasks
+   - Sprint timeline
+4. Set realistic start/end dates considering:
+   - Sprint schedule
+   - Task dependencies
+   - Team capacity
+
+### Task Update Messages
+The bot will send updates like:
+
 ## Running the Bot and viewer
 
 ```bash
