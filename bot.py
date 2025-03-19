@@ -923,8 +923,8 @@ class ScrumBot:
                         user = self.driver.users.get_user(post['user_id'])['username']
                         prior_messages.append(f"@{user}: {post['message']}")
                         
-                # Limit to 10 messages
-                if len(prior_messages) >= 15:
+                # Limit to x messages
+                if len(prior_messages) >= 30:
                     break
             
             # Get recently updated tasks for this project
