@@ -108,7 +108,7 @@ class JiraService(AIValidator):
             
         try:
             # Calculate the start of yesterday
-            start_date = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
             
             # Query for issues assigned to the user that were updated recently
             jql = (
@@ -517,3 +517,153 @@ class JiraService(AIValidator):
             print(f"Error in validate_and_update_sprint_tasks: {e}")
             print(f"Full error: {traceback.format_exc()}")
             return {'error': str(e), 'updated': 0, 'tasks': []} 
+
+    def analyze_blocker(self, 
+                       blocker_details: Dict,
+                       reporter_username: str,
+                       channel_members: Dict[str, Dict]) -> Dict:
+        """Analyze blocker and determine appropriate assignee and task details."""
+        try:
+            if not self.enabled or not self.client:
+                print("AI service is not enabled, cannot analyze blocker")
+                return blocker_details
+            
+            # Format team member information for AI context
+            team_info = []
+            for username, details in channel_members.items():
+                team_info.append(
+                    f"- @{username} ({details.get('jira_username', 'unknown')}): "
+                    f"{details.get('bio', 'No role info')} "
+                    f"[Reporter: {'Yes' if username == reporter_username else 'No'}]"
+                )
+            
+            team_context = "\n".join(team_info)
+            
+            # Create prompt without problematic f-string formatting
+            prompt = f"""Analyze this blocker and determine who should be assigned to resolve it.
+
+Blocker Description: {blocker_details['description']}
+Reported by: @{reporter_username}
+Severity: {blocker_details['severity']}
+
+Team Members Available:
+{team_context}
+
+Consider:
+1. If the blocker mentions waiting for someone's input/review/work, assign to that person
+2. If the blocker is technical, assign based on team members' expertise
+3. If the blocker requires coordination, assign to project manager/tech lead
+4. If the blocker is about dependencies, assign to the person responsible for that dependency
+5. Don't automatically assign back to the reporter unless they're actually the best person to resolve it
+
+Return a JSON object with these exact fields:
+- assignee: the username (not Jira username) who should handle this
+- reasoning: detailed explanation of why this person was chosen
+- task_title: clear, concise title for the Jira task
+- suggested_priority: one of "Highest", "High", "Medium", or "Low" based on severity and impact
+
+Example response format:
+{{
+    "assignee": "username",
+    "reasoning": "This person was chosen because...",
+    "task_title": "Provide input for TES-6 implementation",
+    "suggested_priority": "High"
+}}"""
+
+            print("\nCalling AI to analyze blocker...")
+            completion = self.client.chat.completions.create(
+                model="google/gemini-flash-1.5",
+                messages=[{"role": "user", "content": prompt}],
+                extra_headers=self.extra_headers
+            )
+            
+            response = completion.choices[0].message.content
+            print(f"Raw AI response: {response}")
+            
+            # Clean up and parse response
+            cleaned_response = response.replace('```json', '').replace('```', '').strip()
+            analysis = json.loads(cleaned_response)
+            
+            print(f"AI Analysis: {json.dumps(analysis, indent=2)}")
+            return analysis
+            
+        except Exception as e:
+            print(f"Error analyzing blocker: {e}")
+            print(f"Full error: {traceback.format_exc()}")
+            # Return original assignee type if analysis fails
+            return {
+                "assignee": reporter_username,
+                "reasoning": "Failed to analyze blocker, defaulting to reporter",
+                "task_title": blocker_details['description'][:100],
+                "suggested_priority": "High" if blocker_details['severity'] == "high" else "Medium"
+            }
+
+    def create_blocker_task(self, 
+                           project_code: str,
+                           blocker_details: Dict,
+                           reporter_username: str,
+                           channel_members: Dict[str, Dict]) -> Optional[Dict]:
+        """Create a Jira task for a reported blocker.
+        
+        Args:
+            project_code: The Jira project code
+            blocker_details: Details about the blocker from AI analysis
+            reporter_username: Username who reported the blocker
+            channel_members: Dict of channel members with their details
+            
+        Returns:
+            Dict with created task details or None if creation failed
+        """
+        try:
+            if not self.enabled:
+                print("Jira service is not enabled, cannot create blocker task")
+                return None
+            
+            # First analyze the blocker to determine appropriate assignee
+            analysis = self.analyze_blocker(
+                blocker_details=blocker_details,
+                reporter_username=reporter_username,
+                channel_members=channel_members
+            )
+            
+            # Get the assignee's Jira username from channel members
+            assignee_details = channel_members.get(analysis['assignee'])
+            if not assignee_details:
+                print(f"Could not find details for assignee {analysis['assignee']}, defaulting to reporter")
+                assignee_details = channel_members.get(reporter_username)
+            
+            if not assignee_details:
+                print("Could not find valid assignee, cannot create task")
+                return None
+            
+            # Create the issue
+            issue_dict = {
+                'project': {'key': project_code},
+                'summary': analysis['task_title'],
+                'description': (
+                    f"*Blocker reported by:* {reporter_username}\n\n"
+                    f"*Description:* {blocker_details['description']}\n\n"
+                    f"*Severity:* {blocker_details['severity']}\n\n"
+                    f"*Impact:* This blocker is affecting {reporter_username}'s progress.\n\n"
+                    f"*AI Assignment Reasoning:* {analysis['reasoning']}"
+                ),
+                'issuetype': {'name': 'Task'},
+                'priority': {'name': analysis['suggested_priority']},
+                'assignee': {'name': assignee_details['jira_username']},
+                'labels': ['blocker']
+            }
+            
+            new_issue = self.jira.create_issue(fields=issue_dict)
+            
+            return {
+                'key': new_issue.key,
+                'summary': new_issue.fields.summary,
+                'assignee': analysis['assignee'],
+                'url': f"{self.jira._options['server']}/browse/{new_issue.key}",
+                'reasoning': analysis['reasoning']
+            }
+            
+        except Exception as e:
+            print(f"Error creating blocker task: {e}")
+            print(f"Full error: {traceback.format_exc()}")
+            return None 

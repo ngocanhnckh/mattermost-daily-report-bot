@@ -345,13 +345,56 @@ class ScrumBot:
             print(f"Channel ID: {channel_id}")
             print(f"Username: {username}")
             print(f"Message: {message}")
-            print(f"AI Validation Enabled: {self.ai_validator.enabled}")
             
-            # Validate report with AI if enabled
+            # Get channel info and project code
+            channel_info = self.channels.get(channel_id, {})
+            channel_name = channel_info.get('name', '')
+            channel_mapping = CHANNEL_MAPPINGS.get(channel_name, {})
+            project_code = channel_mapping.get('jira_project')
+            
+            if not project_code:
+                print(f"No Jira project mapping found for channel {channel_name}")
+                return
+            
+            # Get channel members with their details
+            channel_members = {
+                member: USER_MAPPINGS.get(member, {})
+                for member in channel_info.get('members', [])
+                if member not in EXCLUDED_USERS and member != BOT_USERNAME
+            }
+            
+            # Validate report with AI
             print("\nStarting AI validation...")
             validation_result = self.ai_validator.validate_report(message)
             print(f"Validation result: {validation_result}")
             
+            # Handle blocker if detected
+            if validation_result.get('has_blocker'):
+                print("\nBlocker detected, creating Jira task...")
+                blocker_task = self.jira_service.create_blocker_task(
+                    project_code=project_code,
+                    blocker_details=validation_result['blocker_details'],
+                    reporter_username=username,
+                    channel_members=channel_members
+                )
+                
+                if blocker_task:
+                    # Create notification message
+                    notification = (
+                        f"🚨 **New Blocker Task Created**\n\n"
+                        f"@{blocker_task['assignee']} A new blocker has been assigned to you:\n"
+                        f"[{blocker_task['key']}]({blocker_task['url']}): {blocker_task['summary']}\n\n"
+                        f"This blocker was reported by @{username} in their daily report.\n\n"
+                        f"*Assignment Reasoning:* {blocker_task.get('reasoning', 'No reasoning provided')}"
+                    )
+                    
+                    # Send notification to channel (outside the thread)
+                    self.driver.posts.create_post({
+                        'channel_id': channel_id,
+                        'message': notification
+                    })
+            
+            # Continue with existing report validation logic...
             if validation_result["valid"]:
                 print("Report is valid, checking if user already reported today...")
                 if not self.db.has_reported_today(channel_id, username):

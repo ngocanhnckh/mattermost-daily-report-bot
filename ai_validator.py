@@ -2,6 +2,7 @@ from openai import OpenAI
 import json
 from typing import Dict, Optional
 import traceback
+from config import JIRA_URL
 
 class AIValidator:
     def __init__(self, api_key: str, site_url: str = "", site_name: str = "", enabled: bool = True):
@@ -50,6 +51,8 @@ class AIValidator:
             Dict with keys:
                 - valid (bool): Whether the report is valid
                 - message (str): Response message for the user
+                - has_blocker (bool): Whether a blocker was detected
+                - blocker_details (Dict): Details about the blocker if found
         """
         print("\n=== Starting Report Validation ===")
         print(f"Report text to validate: {report_text}")
@@ -73,10 +76,16 @@ class AIValidator:
                 User message to analyze:
                 {report_text}
                 
-                Return your analysis as a JSON with two fields:
+                Return your analysis as a JSON with these fields:
                 
                 - valid: boolean indicating if the report follows the format
-                - message: string with either thanks for a good report or instructions on how to improve. If the report is valid, notice them **the report is accepted** and they don't need to reply further
+                - message: string with either thanks for a good report or instructions on how to improve
+                - has_blocker: boolean indicating if any blockers were mentioned
+                - blocker_details: object containing:
+                  - description: clear description of the blocker
+                  - severity: "high", "medium", or "low" based on impact
+                  - suggested_assignee_type: type of person needed to resolve (e.g. "backend", "frontend", "devops", "tech_lead")
+                Only include blocker_details if has_blocker is true.
                 
                 Remember:
                 - Some time user respond seems vauge like "Done the CRUD API of User", Just let the report pass / accept the report, PM will understand because he know the context. As long as they described what they did, you don't need to understand it.
@@ -132,16 +141,14 @@ class AIValidator:
                     # Verify the response has the required fields
                     if 'valid' in result and 'message' in result:
                         print(f"Successfully parsed result on attempt {attempt + 1}")
-                        return {
-                            "valid": result["valid"],
-                            "message": result["message"]
-                        }
+                        return result  # Return the full result including blocker details if present
                     else:
                         print(f"Missing required fields in response: {result}")
                         if attempt == max_retries - 1:
                             return {
                                 "valid": True,  # Default to true on last attempt
-                                "message": "Unable to validate report format properly"
+                                "message": "Unable to validate report format properly",
+                                "has_blocker": False
                             }
                         continue  # Try again if we have attempts left
                         
@@ -150,7 +157,8 @@ class AIValidator:
                     if attempt == max_retries - 1:
                         return {
                             "valid": True,  # Default to true on last attempt
-                            "message": "Unable to validate report format"
+                            "message": "Unable to validate report format",
+                            "has_blocker": False
                         }
                     continue  # Try again if we have attempts left
                 
@@ -160,12 +168,14 @@ class AIValidator:
                 if attempt == max_retries - 1:
                     return {
                         "valid": True,  # Default to true on last attempt
-                        "message": "Unable to validate report at this time"
+                        "message": "Unable to validate report at this time",
+                        "has_blocker": False
                     }
                 continue  # Try again if we have attempts left
         
         # If we somehow get here, return a safe default
         return {
             "valid": True,
-            "message": "Unable to properly validate report after multiple attempts"
-        } 
+            "message": "Unable to properly validate report after multiple attempts",
+            "has_blocker": False
+        }
