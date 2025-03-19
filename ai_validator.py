@@ -214,30 +214,213 @@ class AIValidator:
             }
         
         try:
-            # Format context for AI with more detailed task information
-            tasks_context = "\n".join([
-                f"- {task['key']}: {task['summary']}\n"
-                f"  Status: {task['status']}\n"
-                f"  Assignee: {task['assignee']} ({task['assignee_display_name']})\n"
-                f"  Start Date: {task['start_date'].strftime('%Y-%m-%d') if task['start_date'] else 'Not set'}\n"
-                f"  End Date: {task['end_date'].strftime('%Y-%m-%d') if task['end_date'] else 'Not set'}\n"
-                f"  Original Estimate: {task['original_estimate'] or 'Not set'}"
-                for task in active_tasks
-            ])
+            # First, determine the type of question
+            question_type_prompt = f"""Determine if this question is asking for a detailed project report or other types of requests.
             
-            # Add today's date for context
-            today_str = datetime.now().strftime('%Y-%m-%d')
+
+Question: {question}
+
+Return a JSON response with this format:
+{{
+    "type": "project_status" | "other",  // Type of question
+    "confidence": float,  // How confident in this classification (0-1)
+    "reason": "Explanation of why this is classified as status or other"
+}}
+
+Important:
+- "project_status" includes:
+  * When user asked for a detailed report of the project
+  * When user asked for overall status of the project but do not specify about any specific detail
+- "other" includes:
+  * Questions about what to do next, or execute some action
+  * Task creation requests
+  * Specific task updates (status changes, estimates)
+  * Task updates (status changes, estimates)
+  * General questions
+  * Assignment changes"""
+
+            # Get question type analysis
+            type_completion = self.client.chat.completions.create(
+                model="google/gemini-flash-1.5",
+                messages=[{"role": "user", "content": question_type_prompt}],
+                extra_headers=self.extra_headers
+            )
             
-            members_context = "\n".join([
-                f"- @{username} ({details.get('jira_username', '')}): {details.get('bio', 'No bio')}"
-                for username, details in channel_members.items()
-            ])
+            type_response = type_completion.choices[0].message.content
+            question_type = json.loads(type_response.replace('```json', '').replace('```', '').strip())
             
-            messages_context = "\n".join([
-                f"Message: {msg}" for msg in prior_messages
-            ])
-            
-            prompt = f"""Analyze this question and determine if it needs action (creating or updating tasks) or just information.
+            # If it's a project status question, use the status report prompt
+            if question_type['type'] == 'project_status':
+                today = datetime.now()
+                
+                # Format member context first
+                members_context = "\n".join([
+                    f"- @{username} ({details.get('jira_username', '')}): {details.get('bio', 'No bio')}"
+                    for username, details in channel_members.items()
+                ])
+                
+                # Prepare detailed task data for AI analysis
+                task_details = []
+                for task in active_tasks:
+                    end_date = task['end_date'].strftime('%Y-%m-%d') if task['end_date'] else 'Not set'
+                    start_date = task['start_date'].strftime('%Y-%m-%d') if task['start_date'] else 'Not set'
+                    is_overdue = task['end_date'] and task['end_date'].date() < today.date()
+                    
+                    task_details.append({
+                        'key': task['key'],
+                        'summary': task['summary'],
+                        'status': task['status'],
+                        'assignee': task['assignee'],
+                        'assignee_display_name': task['assignee_display_name'],
+                        'start_date': start_date,
+                        'end_date': end_date,
+                        'estimate': task['original_estimate'],
+                        'is_overdue': is_overdue
+                    })
+
+                status_prompt = f"""As a professional Project Manager, analyze the current project status and generate a comprehensive report based on the following data:
+
+Today's Date: {today.strftime('%Y-%m-%d')}
+
+<Project Tasks>
+{json.dumps(task_details, indent=2)}
+</Project Tasks>
+
+<Team Members and Their Roles>
+{members_context}
+</Team Members>
+
+Based on this data, generate a detailed project status report that includes:
+
+1. Project Overview
+   - Task distribution and completion rates (no need to mention each task, just mention the porpotion of tasks in each status)
+   - Key metrics and trends
+   - Overall project health assessment
+
+2. Timeline Analysis
+   - Progress tracking
+   - Deadline compliance
+   - Risk identification
+   - Blockers and dependencies
+
+3. Team Performance
+   - Workload distribution (calculate workload hours against timeline start date end date of each member as well, assuming 1 member can load 4 hours of work per day in average)
+   - Resource utilization
+   - Capacity analysis
+   - Individual performance metrics
+
+4. Risk Assessment
+   - Overdue tasks
+   - Upcoming deadlines
+   - Resource constraints
+   - Technical challenges
+   - Mitigation strategies
+
+5. Recommendations
+   - Priority adjustments
+   - Resource reallocation
+   - Process improvements
+   - Immediate actions needed
+   - Any tasks updates (assignee, status, estimate, start date, end date) or task creation needed?
+
+Format the report professionally with:
+- Clear section headings
+- Data-backed insights
+- Specific examples from the task list
+- Actionable recommendations
+- Risk mitigation strategies
+
+Important:
+- Focus on patterns and trends in the data
+- Identify potential bottlenecks
+- Highlight both risks and opportunities
+- Provide specific, actionable recommendations
+- Use professional PM terminology
+- Keep the report around 1000 words
+- Make it easy to read with bullet points and clear sections
+- Answer in the original request message language. The message of user that asked "{question}"
+"""
+
+                # Get status report
+                print(status_prompt)
+                status_completion = self.client.chat.completions.create(
+                    model="google/gemini-flash-1.5",
+                    messages=[{"role": "user", "content": status_prompt}],
+                    extra_headers=self.extra_headers
+                )
+                
+                return {
+                    "needs_action": False,
+                    "action_type": "info",
+                    "response": status_completion.choices[0].message.content
+                }
+                
+            else:
+                # Continue with regular question analysis (context check and main prompt)
+                context_prompt = f"""Analyze if this question needs context from recent channel messages to be properly understood and answered.
+
+Question: {question}
+
+Recent Channel Messages:
+{chr(10).join(prior_messages)}
+
+Return a JSON response with this format:
+{{
+    "needs_context": boolean,  // Whether recent messages provide important context
+    "relevant_messages": [  // Only include if needs_context is true
+        "message1",
+        "message2"
+    ],
+    "reason": "Explanation of why context is/isn't needed"
+}}
+
+Important:
+- If you see consecutive messages that potentially related to the question, mark as needing context, capture at least 5 messages
+- Only mark as needing context if the recent messages contain information crucial to understanding or answering the question
+- For task updates (status changes, estimates, etc.), context usually isn't needed
+- For questions referencing recent discussions or specific details mentioned earlier, context is important
+- If the question is self-contained (like "create a task for X" or "mark Y as done"), no context needed"""
+
+                # Get context analysis
+                context_completion = self.client.chat.completions.create(
+                    model="google/gemini-flash-1.5",
+                    messages=[{"role": "user", "content": context_prompt}],
+                    extra_headers=self.extra_headers
+                )
+                
+                context_response = context_completion.choices[0].message.content
+                context_analysis = json.loads(context_response.replace('```json', '').replace('```', '').strip())
+                
+                print("Context analysis:")
+                print(context_analysis)
+                # Format messages context based on analysis
+                if context_analysis.get('needs_context', False):
+                    messages_context = "\n".join([
+                        f"Message: {msg}" for msg in context_analysis.get('relevant_messages', [])
+                    ])
+                else:
+                    messages_context = "No relevant recent messages needed for this question."
+
+                # Format other context as before
+                tasks_context = "\n".join([
+                    f"- {task['key']}: {task['summary']}\n"
+                    f"  Status: {task['status']}\n"
+                    f"  Assignee: {task['assignee']} ({task['assignee_display_name']})\n"
+                    f"  Start Date: {task['start_date'].strftime('%Y-%m-%d') if task['start_date'] else 'Not set'}\n"
+                    f"  End Date: {task['end_date'].strftime('%Y-%m-%d') if task['end_date'] else 'Not set'}\n"
+                    f"  Original Estimate: {task['original_estimate'] or 'Not set'}"
+                    for task in active_tasks
+                ])
+                
+                today_str = datetime.now().strftime('%Y-%m-%d')
+                
+                members_context = "\n".join([
+                    f"- @{username} ({details.get('jira_username', '')}): {details.get('bio', 'No bio')}"
+                    for username, details in channel_members.items()
+                ])
+
+                # Main analysis prompt
+                prompt = f"""Analyze this question and determine if it needs action (creating or updating tasks) or just information.
 
 Today's Date: {today_str}
 
@@ -256,18 +439,16 @@ Context:
 {messages_context}
 </Recent Channel Messages>
 
-
 Determine if this needs:
 1. Just an informational response
 2. Creation of new tasks
 3. Updates to existing tasks
-- Warning: if the Recent Channel Messages do not relate to the current question, or there are issues already resolved, ignore it.
 
 Return a JSON response with this format:
 {{
     "needs_action": boolean,
     "response": "Clear response to the user's question",
-    "action_type": "create" | "update" | "info",  // Type of action needed
+    "action_type": "create" | "update" | "info",
     "tasks": [  // Only include if needs_action is true and action_type is "create"
         {{
             "title": "Clear task title",
@@ -280,12 +461,12 @@ Return a JSON response with this format:
     ],
     "updates": [  // Only include if needs_action is true and action_type is "update"
         {{
-            "key": "XXX-123",  // The Jira task key to update
+            "key": "XXX-123",
             "fields": {{
-                "status": "To Do" | "In Progress" | "Done",  // Optional
-                "end_date": "YYYY-MM-DD",  // Optional
-                "estimate": "Xh",  // Optional
-                "assignee": "username"  // Optional
+                "status": "To Do" | "In Progress" | "Done",
+                "end_date": "YYYY-MM-DD",
+                "estimate": "Xh",
+                "assignee": "username"
             }},
             "reason": "Explanation of why this update is needed"
         }}
@@ -299,6 +480,8 @@ Return a JSON response with this format:
 }}
 
 Important:
+- Answer using user's language and style of communication. Same for the Reasoning response, use the user's language
+- Do not execute any action if you are asking the user for more information before executing. Only ask for more info when it's really necessary, try to solve the problem with the provided context most of the time.
 - Today's date is {today_str}, all start dates must be >= today
 - Look for keywords indicating task updates like "done", "complete", "finished", "move", "change", "update", "extend"
 - For status updates, user might say things like "I finished XXX-123" or "Moving XXX-123 to Done"
@@ -306,29 +489,27 @@ Important:
 - For estimate updates, look for "this will take longer", "need X hours", "estimate should be"
 - Estimates should be realistic based on task complexity
 - Assignees should match their expertise (see their bios)
-- Answer using user's language and style of communication
 - All new tasks will be added to the current sprint
 - You can create many new tasks in case user request a feature
 - Do not create duplicate tasks
 - If just information is needed, make response clear and helpful
-- If tasks are needed, ensure they're well-defined and actionable"""
+- If tasks are needed, ensure they're well-defined and actionable
+- One jira user should not have more than 3 tasks has the in progress status, or else they can't focus
+"""
 
-            print(prompt)
-
-            completion = self.client.chat.completions.create(
-                model="google/gemini-flash-1.5",
-                messages=[{"role": "user", "content": prompt}],
-                extra_headers=self.extra_headers
-            )
-            
-            response = completion.choices[0].message.content
-            
-            # Clean and parse response
-            cleaned_response = response.replace('```json', '').replace('```', '').strip()
-            result = json.loads(cleaned_response)
-            
-            return result
-            
+                # Get main analysis
+                completion = self.client.chat.completions.create(
+                    model="google/gemini-flash-1.5",
+                    messages=[{"role": "user", "content": prompt}],
+                    extra_headers=self.extra_headers
+                )
+                
+                response = completion.choices[0].message.content
+                cleaned_response = response.replace('```json', '').replace('```', '').strip()
+                result = json.loads(cleaned_response)
+                
+                return result
+                
         except Exception as e:
             print(f"Error analyzing question: {e}")
             print(f"Full error: {traceback.format_exc()}")

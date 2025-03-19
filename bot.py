@@ -891,9 +891,11 @@ class ScrumBot:
             print(f"Error sending task reminder to {username}: {e}")
             print(f"Full error: {traceback.format_exc()}")
 
-    def _handle_bot_mention(self, post_data: Dict):
-        """Handle when bot is mentioned in a message."""
+    def _handle_bot_mention(self, post_data):
         try:
+            # Get the root_id - if this is a thread reply, use the parent thread's id
+            root_id = post_data.get('root_id') or post_data.get('id')
+            
             channel_id = post_data['channel_id']
             user_id = post_data['user_id']
             message = post_data['message'].replace(f'@{BOT_USERNAME}', '').strip()  # Remove bot mention
@@ -910,7 +912,7 @@ class ScrumBot:
                 self.driver.posts.create_post({
                     'channel_id': channel_id,
                     'message': "Sorry, this channel is not configured with a Jira project.",
-                    'root_id': post_data.get('id')
+                    'root_id': root_id
                 })
                 return
             
@@ -920,10 +922,25 @@ class ScrumBot:
             # Get prior messages
             posts = self.driver.posts.get_posts_for_channel(channel_id)
             prior_messages = []
-            for post in sorted(posts['posts'].values(), key=lambda x: x['create_at'], reverse=True)[:10]:
+            
+            # Check if this is a thread reply
+            is_thread_reply = bool(post_data.get('root_id'))
+            
+            for post in sorted(posts['posts'].values(), key=lambda x: x['create_at'], reverse=True):
                 if post['id'] != post_data['id']:  # Skip the current message
-                    user = self.driver.users.get_user(post['user_id'])['username']
-                    prior_messages.append(f"@{user}: {post['message']}")
+                    # For thread replies, only include messages from the same thread
+                    if is_thread_reply:
+                        if post.get('root_id') == post_data['root_id'] or post['id'] == post_data['root_id']:
+                            user = self.driver.users.get_user(post['user_id'])['username']
+                            prior_messages.append(f"@{user}: {post['message']}")
+                    else:
+                        # For root messages, include all messages
+                        user = self.driver.users.get_user(post['user_id'])['username']
+                        prior_messages.append(f"@{user}: {post['message']}")
+                        
+                # Limit to 10 messages
+                if len(prior_messages) >= 15:
+                    break
             
             # Get recently updated tasks for this project
             active_tasks = self.jira_service.get_recent_project_tasks(project_code)
@@ -1050,12 +1067,12 @@ class ScrumBot:
                 response = f"{analysis['response']}\n\n"
                 
                 if created_tasks:
-                    response += "I've created the following tasks:\n"
+                    response += "### Task creation:\n"
                     for task in created_tasks:
                         response += f"- [{task['key']}]({task['url']}): {task['title']} (Assigned to @{task['assignee']})\n"
                 
                 if updated_tasks:
-                    response += "\nI've updated the following tasks:\n"
+                    response += "\n### Task updates:\n"
                     for task in updated_tasks:
                         changes = ", ".join(task['changes'])
                         response += f"- [{task['key']}]({task['url']}): {task['summary']}\n"
@@ -1063,7 +1080,7 @@ class ScrumBot:
                         response += f"  • Reason: {task['reason']}\n"
                 
                 if analysis.get('reasoning'):
-                    response += "\n**Reasoning:**\n"
+                    response += "\n## Reasoning:\n"
                     for aspect, explanation in analysis['reasoning'].items():
                         response += f"- {aspect.replace('_', ' ').title()}: {explanation}\n"
             else:
@@ -1073,17 +1090,23 @@ class ScrumBot:
             self.driver.posts.create_post({
                 'channel_id': channel_id,
                 'message': response,
-                'root_id': post_data.get('id')  # Reply in thread if it exists
+                'root_id': root_id
             })
             
         except Exception as e:
-            print(f"Error handling bot mention: {e}")
+            print(f"Error handling bot mention: {str(e)}")
             print(f"Full error: {traceback.format_exc()}")
-            self.driver.posts.create_post({
-                'channel_id': channel_id,
-                'message': "Sorry, I encountered an error processing your question. Please try again.",
-                'root_id': post_data.get('id')
-            })
+            
+            try:
+                # Use the same root_id logic for error messages
+                root_id = post_data.get('root_id') or post_data.get('id')
+                self.driver.posts.create_post({
+                    'channel_id': channel_id,
+                    'message': "Sorry, I encountered an error processing your question. Please try again.",
+                    'root_id': root_id
+                })
+            except Exception as e2:
+                print(f"Error sending error message: {str(e2)}")
 
 if __name__ == "__main__":
     bot = ScrumBot()

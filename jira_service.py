@@ -756,3 +756,120 @@ Example response format:
             print(f"Error fetching Jira tasks: {str(e)}")
             print(f"Full error: {traceback.format_exc()}")
             return [] 
+
+    def generate_task_suggestions(self, 
+                                project_code: str,
+                                channel_members: Dict[str, Dict],
+                                recent_messages: List[str]) -> Dict[str, str]:
+        """Generate personalized task suggestions for each team member.
+        
+        Args:
+            project_code: The Jira project code
+            channel_members: Dict of channel members with their details
+            recent_messages: List of recent channel messages
+            
+        Returns:
+            Dict mapping usernames to their task suggestions
+        """
+        print(f"\n=== Generating Task Suggestions for Project {project_code} ===")
+        
+        if not self.enabled or not self.client:
+            print("AI service is not enabled, cannot generate suggestions")
+            return {}
+            
+        try:
+            # Get all active tasks for the project
+            jql = (
+                f"project = {project_code} "
+                f"AND status IN ('To Do', 'In Progress') "
+                f"AND sprint IN openSprints()"
+            )
+            issues = self.jira.search_issues(jql)
+            
+            # Group tasks by assignee
+            tasks_by_assignee = {}
+            unassigned_tasks = []
+            
+            for issue in issues:
+                task = {
+                    'key': issue.key,
+                    'summary': issue.fields.summary,
+                    'status': issue.fields.status.name,
+                    'end_date': getattr(issue.fields, self.end_date_field, None),
+                    'original_estimate': (
+                        issue.fields.timetracking.originalEstimate 
+                        if hasattr(issue.fields, 'timetracking') and issue.fields.timetracking 
+                        else None
+                    )
+                }
+                
+                if hasattr(issue.fields, 'assignee') and issue.fields.assignee:
+                    assignee = issue.fields.assignee.name
+                    if assignee not in tasks_by_assignee:
+                        tasks_by_assignee[assignee] = []
+                    tasks_by_assignee[assignee].append(task)
+                else:
+                    unassigned_tasks.append(task)
+            
+            # Format recent messages context
+            messages_context = "\n".join(recent_messages) if recent_messages else "No recent discussions"
+            
+            # Generate suggestions for each member
+            suggestions = {}
+            
+            for username, details in channel_members.items():
+                jira_username = details.get('jira_username')
+                if not jira_username:
+                    continue
+                    
+                user_tasks = tasks_by_assignee.get(jira_username, [])
+                
+                # Create prompt for this user
+                prompt = f"""As a Project Manager, suggest what tasks {username} should focus on today.
+
+User Role/Expertise: {details.get('bio', 'No role info')}
+
+Their Active Tasks:
+{chr(10).join([
+    f"- {task['key']}: {task['summary']} ({task['status']})"
+    f"\n  Due: {task['end_date'] or 'No deadline'}"
+    f"\n  Estimate: {task['original_estimate'] or 'Not estimated'}"
+    for task in user_tasks
+])}
+
+Unassigned Tasks That Might Be Relevant:
+{chr(10).join([
+    f"- {task['key']}: {task['summary']}"
+    for task in unassigned_tasks
+])}
+
+Recent Team Discussions:
+{messages_context}
+
+Consider:
+1. Task deadlines (prioritize tasks ending soon)
+2. Task dependencies and blockers
+3. User's expertise and role
+4. Recent discussions that might affect priorities
+5. Workload balance (don't overload)
+
+Return a clear, friendly suggestion in the user's native language (based on recent messages).
+Focus on specific tasks they should work on today and why.
+Include task codes (e.g., TES-123) when referencing tasks.
+Keep it concise but informative."""
+
+                # Get AI suggestion
+                completion = self.client.chat.completions.create(
+                    model="google/gemini-flash-1.5",
+                    messages=[{"role": "user", "content": prompt}],
+                    extra_headers=self.extra_headers
+                )
+                
+                suggestions[username] = completion.choices[0].message.content
+                
+            return suggestions
+            
+        except Exception as e:
+            print(f"Error generating task suggestions: {e}")
+            print(f"Full error: {traceback.format_exc()}")
+            return {} 
