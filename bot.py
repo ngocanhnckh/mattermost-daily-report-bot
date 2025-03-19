@@ -967,12 +967,15 @@ class ScrumBot:
                             if not assignee_info:
                                 continue
                                 
+                            # Determine if this is a story or regular task
+                            is_story = task['type'] == 'story'
+                            
                             # Create issue in Jira
                             issue_dict = {
                                 'project': {'key': project_code},
                                 'summary': task['title'],
                                 'description': task['description'],
-                                'issuetype': {'name': 'Task'},
+                                'issuetype': {'name': 'Story' if is_story else 'Task'},
                                 'assignee': {'name': assignee_info['jira_username']},
                                 self.jira_service.start_date_field: task['start_date'],
                                 self.jira_service.end_date_field: task['end_date'],
@@ -988,12 +991,53 @@ class ScrumBot:
                             if sprint_id:
                                 self.jira_service.jira.add_issues_to_sprint(sprint_id, [new_issue.key])
                             
-                            created_tasks.append({
+                            created_task = {
                                 'key': new_issue.key,
                                 'url': f"{JIRA_URL}/browse/{new_issue.key}",
                                 'assignee': task['assignee'],
-                                'title': task['title']
-                            })
+                                'title': task['title'],
+                                'type': task['type'],
+                                'sub_tasks': []
+                            }
+                            
+                            # If this is a story, create sub-tasks
+                            if is_story and 'sub_tasks' in task:
+                                for sub_task in task['sub_tasks']:
+                                    # Get sub-task assignee's Jira username
+                                    sub_assignee_info = USER_MAPPINGS.get(sub_task['assignee'])
+                                    if not sub_assignee_info:
+                                        continue
+                                        
+                                    # Create sub-task
+                                    sub_task_dict = {
+                                        'project': {'key': project_code},
+                                        'summary': sub_task['title'],
+                                        'description': sub_task['description'],
+                                        'issuetype': {'name': 'Sub-task'},
+                                        'parent': {'key': new_issue.key},
+                                        'assignee': {'name': sub_assignee_info['jira_username']},
+                                        self.jira_service.start_date_field: sub_task['start_date'],
+                                        self.jira_service.end_date_field: sub_task['end_date'],
+                                        'timetracking': {
+                                            'originalEstimate': sub_task['estimate'],
+                                            'remainingEstimate': sub_task['estimate']
+                                        }
+                                    }
+                                    
+                                    new_sub_task = self.jira_service.jira.create_issue(fields=sub_task_dict)
+                                    
+                                    # Add sub-task to sprint
+                                    if sprint_id:
+                                        self.jira_service.jira.add_issues_to_sprint(sprint_id, [new_sub_task.key])
+                                    
+                                    created_task['sub_tasks'].append({
+                                        'key': new_sub_task.key,
+                                        'url': f"{JIRA_URL}/browse/{new_sub_task.key}",
+                                        'assignee': sub_task['assignee'],
+                                        'title': sub_task['title']
+                                    })
+                            
+                            created_tasks.append(created_task)
                             
                         except Exception as e:
                             print(f"Error creating task: {e}")
@@ -1003,46 +1047,109 @@ class ScrumBot:
                     # Handle task updates
                     for update in analysis['updates']:
                         try:
-                            issue = self.jira_service.jira.issue(update['key'])
-                            update_dict = {}
-                            
-                            # Status update
-                            if 'status' in update['fields']:
-                                # Get transition ID for the desired status
-                                transitions = self.jira_service.jira.transitions(issue)
-                                for t in transitions:
-                                    if t['to']['name'].lower() == update['fields']['status'].lower():
-                                        self.jira_service.jira.transition_issue(issue, t['id'])
-                                        break
-                            
-                            # End date update
-                            if 'end_date' in update['fields']:
-                                update_dict[self.jira_service.end_date_field] = update['fields']['end_date']
-                            
-                            # Estimate update
-                            if 'estimate' in update['fields']:
-                                update_dict['timetracking'] = {
-                                    'originalEstimate': update['fields']['estimate'],
-                                    'remainingEstimate': update['fields']['estimate']
+                            if update['action'] == 'convert_to_story':
+                                # Get the original task
+                                original_task = self.jira_service.jira.issue(update['key'])
+                                
+                                # Create new story
+                                story_dict = {
+                                    'project': {'key': project_code},
+                                    'summary': original_task.fields.summary,
+                                    'description': original_task.fields.description,
+                                    'issuetype': {'name': 'Story'},
+                                    'assignee': {'name': original_task.fields.assignee.name},
+                                    self.jira_service.start_date_field: getattr(original_task.fields, self.jira_service.start_date_field, None),
+                                    self.jira_service.end_date_field: getattr(original_task.fields, self.jira_service.end_date_field, None)
                                 }
-                            
-                            # Assignee update
-                            if 'assignee' in update['fields']:
-                                assignee_info = USER_MAPPINGS.get(update['fields']['assignee'])
-                                if assignee_info:
-                                    update_dict['assignee'] = {'name': assignee_info['jira_username']}
-                            
-                            # Apply updates if any
-                            if update_dict:
-                                issue.update(fields=update_dict)
-                            
-                            updated_tasks.append({
-                                'key': issue.key,
-                                'url': f"{JIRA_URL}/browse/{issue.key}",
-                                'summary': issue.fields.summary,
-                                'changes': list(update['fields'].keys()),
-                                'reason': update['reason']
-                            })
+                                
+                                new_story = self.jira_service.jira.create_issue(fields=story_dict)
+                                
+                                # Create sub-tasks
+                                created_sub_tasks = []
+                                for sub_task in update['sub_tasks']:
+                                    # Get sub-task assignee's Jira username
+                                    sub_assignee_info = USER_MAPPINGS.get(sub_task['assignee'])
+                                    if not sub_assignee_info:
+                                        continue
+                                        
+                                    # Create sub-task
+                                    sub_task_dict = {
+                                        'project': {'key': project_code},
+                                        'summary': sub_task['title'],
+                                        'description': sub_task['description'],
+                                        'issuetype': {'name': 'Sub-task'},
+                                        'parent': {'key': new_story.key},
+                                        'assignee': {'name': sub_assignee_info['jira_username']},
+                                        self.jira_service.start_date_field: sub_task['start_date'],
+                                        self.jira_service.end_date_field: sub_task['end_date'],
+                                        'timetracking': {
+                                            'originalEstimate': sub_task['estimate'],
+                                            'remainingEstimate': sub_task['estimate']
+                                        }
+                                    }
+                                    
+                                    new_sub_task = self.jira_service.jira.create_issue(fields=sub_task_dict)
+                                    created_sub_tasks.append({
+                                        'key': new_sub_task.key,
+                                        'url': f"{JIRA_URL}/browse/{new_sub_task.key}",
+                                        'assignee': sub_task['assignee'],
+                                        'title': sub_task['title']
+                                    })
+                                
+                                # Delete the original task
+                                original_task.delete()
+                                
+                                updated_tasks.append({
+                                    'key': new_story.key,
+                                    'url': f"{JIRA_URL}/browse/{new_story.key}",
+                                    'summary': original_task.fields.summary,
+                                    'action': 'converted_to_story',
+                                    'original_key': update['key'],
+                                    'sub_tasks': created_sub_tasks,
+                                    'reason': update['reason']
+                                })
+                                
+                            else:  # Regular update
+                                issue = self.jira_service.jira.issue(update['key'])
+                                update_dict = {}
+                                
+                                # Status update
+                                if 'status' in update['fields']:
+                                    # Get transition ID for the desired status
+                                    transitions = self.jira_service.jira.transitions(issue)
+                                    for t in transitions:
+                                        if t['to']['name'].lower() == update['fields']['status'].lower():
+                                            self.jira_service.jira.transition_issue(issue, t['id'])
+                                            break
+                                
+                                # End date update
+                                if 'end_date' in update['fields']:
+                                    update_dict[self.jira_service.end_date_field] = update['fields']['end_date']
+                                
+                                # Estimate update
+                                if 'estimate' in update['fields']:
+                                    update_dict['timetracking'] = {
+                                        'originalEstimate': update['fields']['estimate'],
+                                        'remainingEstimate': update['fields']['estimate']
+                                    }
+                                
+                                # Assignee update
+                                if 'assignee' in update['fields']:
+                                    assignee_info = USER_MAPPINGS.get(update['fields']['assignee'])
+                                    if assignee_info:
+                                        update_dict['assignee'] = {'name': assignee_info['jira_username']}
+                                
+                                # Apply updates if any
+                                if update_dict:
+                                    issue.update(fields=update_dict)
+                                
+                                updated_tasks.append({
+                                    'key': issue.key,
+                                    'url': f"{JIRA_URL}/browse/{issue.key}",
+                                    'summary': issue.fields.summary,
+                                    'changes': list(update['fields'].keys()),
+                                    'reason': update['reason']
+                                })
                             
                         except Exception as e:
                             print(f"Error updating task {update['key']}: {e}")
@@ -1052,17 +1159,28 @@ class ScrumBot:
                 response = f"{analysis['response']}\n\n"
                 
                 if created_tasks:
-                    response += "### Task creation:\n"
+                    response += "### Created Tasks:\n"
                     for task in created_tasks:
                         response += f"- [{task['key']}]({task['url']}): {task['title']} (Assigned to @{task['assignee']})\n"
+                        if task['type'] == 'story' and task['sub_tasks']:
+                            response += "  Sub-tasks:\n"
+                            for sub_task in task['sub_tasks']:
+                                response += f"  - [{sub_task['key']}]({sub_task['url']}): {sub_task['title']} (Assigned to @{sub_task['assignee']})\n"
                 
                 if updated_tasks:
-                    response += "\n### Task updates:\n"
+                    response += "\n### Task Updates:\n"
                     for task in updated_tasks:
-                        changes = ", ".join(task['changes'])
-                        response += f"- [{task['key']}]({task['url']}): {task['summary']}\n"
-                        response += f"  • Updated fields: {changes}\n"
-                        response += f"  • Reason: {task['reason']}\n"
+                        if task.get('action') == 'converted_to_story':
+                            response += f"- Converted task {task['original_key']} to story [{task['key']}]({task['url']})\n"
+                            response += f"  • Created sub-tasks:\n"
+                            for sub_task in task['sub_tasks']:
+                                response += f"    - [{sub_task['key']}]({sub_task['url']}): {sub_task['title']} (Assigned to @{sub_task['assignee']})\n"
+                            response += f"  • Reason: {task['reason']}\n"
+                        else:
+                            changes = ", ".join(task['changes'])
+                            response += f"- [{task['key']}]({task['url']}): {task['summary']}\n"
+                            response += f"  • Updated fields: {changes}\n"
+                            response += f"  • Reason: {task['reason']}\n"
                 
                 if analysis.get('reasoning'):
                     response += "\n## Reasoning:\n"

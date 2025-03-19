@@ -200,12 +200,21 @@ class AIValidator:
             - response (str): Text response to the user's question
             - tasks (List[Dict]): List of tasks to create (if needs_action is True)
               Each task contains:
+              - type (str): "story" or "task"
               - title (str): Task title
               - assignee (str): Mattermost username of assignee
               - start_date (str): YYYY-MM-DD format
               - end_date (str): YYYY-MM-DD format
               - estimate (str): Time estimate in format "Xh"
               - description (str): Task description
+              - sub_tasks (List[Dict]): List of sub-tasks (only for stories)
+                Each sub-task has same fields as tasks except 'type' and 'sub_tasks'
+            - updates (List[Dict]): List of task updates (if needs_action is True)
+              Each update contains:
+              - key (str): Task key to update
+              - action (str): "update" or "convert_to_story"
+              - fields (Dict): Fields to update
+              - sub_tasks (List[Dict]): Sub-tasks to create if converting to story
         """
         if not self.enabled or not self.client:
             return {
@@ -216,7 +225,6 @@ class AIValidator:
         try:
             # First, determine the type of question
             question_type_prompt = f"""Determine if this question is asking for a detailed project report or other types of requests.
-            
 
 Question: {question}
 
@@ -227,10 +235,9 @@ Return a JSON response with this format:
     "reason": "Explanation of why this is classified as status or other"
 }}
 
-Important:
+Important: DO NOT INDICATE "project_status" in random questions, only indicate when user asked specifically for a detailed report of the project
 - "project_status" includes:
   * When user asked for a detailed report of the project
-  * When user asked for overall status of the project but do not specify about any specific detail
 - "other" includes:
   * Questions about what to do next, or execute some action
   * Task creation requests
@@ -441,8 +448,21 @@ Context:
 
 Determine if this needs:
 1. Just an informational response
-2. Creation of new tasks
-3. Updates to existing tasks
+2. Creation of new tasks (either standalone tasks or stories with sub-tasks)
+3. Updates to existing tasks (including converting tasks to stories)
+
+Important Task Creation Guidelines:
+1. If a task is complex or requires multiple steps, create it as a story with sub-tasks
+2. If a task will take more than 2 days or 16 hours, break it down into smaller sub-tasks
+3. If a task involves multiple team members or components, make it a story
+4. When creating a story, ensure sub-tasks are:
+   - Small enough to be completed in 1-2 days
+   - Clearly defined with specific outcomes
+   - Assigned to appropriate team members based on skills
+5. When suggesting to convert an existing task to a story:
+   - The original task should be deleted
+   - A new story should replace it
+   - Break down the work into appropriate sub-tasks
 
 Return a JSON response with this format:
 {{
@@ -451,28 +471,51 @@ Return a JSON response with this format:
     "action_type": "create" | "update" | "info",
     "tasks": [  // Only include if needs_action is true and action_type is "create"
         {{
+            "type": "story" | "task",  // Whether this is a story or standalone task
             "title": "Clear task title",
             "assignee": "username",
             "start_date": "YYYY-MM-DD",
             "end_date": "YYYY-MM-DD",
             "estimate": "Xh",
-            "description": "Detailed task description"
+            "description": "Detailed task description",
+            "sub_tasks": [  // Only include for stories
+                {{
+                    "title": "Sub-task title",
+                    "assignee": "username",
+                    "start_date": "YYYY-MM-DD",
+                    "end_date": "YYYY-MM-DD",
+                    "estimate": "Xh",
+                    "description": "Detailed sub-task description"
+                }}
+            ]
         }}
     ],
     "updates": [  // Only include if needs_action is true and action_type is "update"
         {{
             "key": "XXX-123",
-            "fields": {{
+            "action": "update" | "convert_to_story",  // Whether to update fields or convert to story
+            "fields": {{  // Only for "update" action
                 "status": "To Do" | "In Progress" | "Done",
                 "end_date": "YYYY-MM-DD",
                 "estimate": "Xh",
                 "assignee": "username"
             }},
-            "reason": "Explanation of why this update is needed"
+            "sub_tasks": [  // Only for "convert_to_story" action
+                {{
+                    "title": "Sub-task title",
+                    "assignee": "username",
+                    "start_date": "YYYY-MM-DD",
+                    "end_date": "YYYY-MM-DD",
+                    "estimate": "Xh",
+                    "description": "Detailed sub-task description"
+                }}
+            ],
+            "reason": "Explanation of why this update/conversion is needed"
         }}
     ],
     "reasoning": {{
         "action_needed": "Why tasks need to be created/updated/no action",
+        "task_breakdown": "Why tasks were broken down this way",
         "assignee_choices": "Why these assignees were chosen",
         "time_estimates": "How estimates were determined",
         "date_planning": "Why these dates were chosen"
@@ -480,8 +523,7 @@ Return a JSON response with this format:
 }}
 
 Important:
-- Answer using user's language and style of communication. Same for the Reasoning response, use the user's language
-- Do not execute any action if you are asking the user for more information before executing. Only ask for more info when it's really necessary, try to solve the problem with the provided context most of the time.
+- Answer using user's language and style of communication
 - Today's date is {today_str}, all start dates must be >= today
 - Look for keywords indicating task updates like "done", "complete", "finished", "move", "change", "update", "extend"
 - For status updates, user might say things like "I finished XXX-123" or "Moving XXX-123 to Done"
@@ -490,12 +532,10 @@ Important:
 - Estimates should be realistic based on task complexity
 - Assignees should match their expertise (see their bios)
 - All new tasks will be added to the current sprint
-- You can create many new tasks in case user request a feature
 - Do not create duplicate tasks
 - If just information is needed, make response clear and helpful
 - If tasks are needed, ensure they're well-defined and actionable
-- One jira user should not have more than 3 tasks has the in progress status, or else they can't focus
-"""
+- One jira user should not have more than 3 tasks has the in progress status, or else they can't focus"""
 
                 # Get main analysis
                 completion = self.client.chat.completions.create(
