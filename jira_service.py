@@ -667,3 +667,92 @@ Example response format:
             print(f"Error creating blocker task: {e}")
             print(f"Full error: {traceback.format_exc()}")
             return None 
+
+    def get_recent_project_tasks(self, project_code: str, limit: int = 100) -> List[Dict]:
+        """Get most recently updated tasks in a project.
+        
+        Args:
+            project_code: The Jira project code
+            limit: Maximum number of tasks to return (default 100)
+            
+        Returns:
+            List of task dictionaries
+        """
+        print(f"\n=== Getting Recent Tasks for Project {project_code} ===")
+        
+        if not self.enabled:
+            print("Jira service is not enabled, skipping")
+            return []
+        
+        try:
+            jql = (
+                f"project = {project_code} "
+                f"ORDER BY updated DESC"
+            )
+            print(f"Executing JQL: {jql}")
+            
+            issues = self.jira.search_issues(jql, maxResults=limit)
+            print(f"Found {len(issues)} issues")
+            
+            tasks = []
+            for issue in issues:
+                # Get end date from custom field
+                end_date = None
+                if hasattr(issue.fields, self.end_date_field) and getattr(issue.fields, self.end_date_field):
+                    end_date = datetime.strptime(getattr(issue.fields, self.end_date_field), '%Y-%m-%d')
+                
+                # Get start date from custom field
+                start_date = None
+                if hasattr(issue.fields, self.start_date_field) and getattr(issue.fields, self.start_date_field):
+                    start_date = datetime.strptime(getattr(issue.fields, self.start_date_field), '%Y-%m-%d')
+                
+                # Get assignee details
+                assignee = None
+                assignee_display_name = None
+                if hasattr(issue.fields, 'assignee') and issue.fields.assignee:
+                    assignee = issue.fields.assignee.name  # Jira username
+                    assignee_display_name = issue.fields.assignee.displayName  # Display name
+                
+                # Get time tracking information
+                original_estimate = None
+                if (hasattr(issue.fields, 'timetracking') and 
+                    issue.fields.timetracking and 
+                    hasattr(issue.fields.timetracking, 'originalEstimate')):
+                    original_estimate = issue.fields.timetracking.originalEstimate
+                
+                # Parse the updated timestamp correctly
+                updated = None
+                if hasattr(issue.fields, 'updated'):
+                    try:
+                        # Jira timestamps are in ISO format: "2024-03-19T10:30:00.000+0000"
+                        updated = datetime.strptime(issue.fields.updated.split('.')[0], '%Y-%m-%dT%H:%M:%S')
+                    except Exception as e:
+                        print(f"Error parsing updated timestamp for {issue.key}: {e}")
+                
+                task = {
+                    'key': issue.key,
+                    'summary': issue.fields.summary,
+                    'status': issue.fields.status.name,
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'assignee': assignee,
+                    'assignee_display_name': assignee_display_name,
+                    'original_estimate': original_estimate,
+                    'url': f"{JIRA_URL}/browse/{issue.key}",
+                    'updated': updated
+                }
+                tasks.append(task)
+                print(
+                    f"Added task: {task['key']} - {task['summary']} "
+                    f"({task['status']}) - Assignee: {task['assignee']} - "
+                    f"Start: {task['start_date']} - End: {task['end_date']} - "
+                    f"Estimate: {task['original_estimate']} - "
+                    f"Last updated: {task['updated']}"
+                )
+            
+            return tasks
+            
+        except Exception as e:
+            print(f"Error fetching Jira tasks: {str(e)}")
+            print(f"Full error: {traceback.format_exc()}")
+            return [] 
