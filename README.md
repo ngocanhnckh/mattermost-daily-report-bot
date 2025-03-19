@@ -136,7 +136,7 @@ Add Jira settings to your `config.json`:
 The bot automatically detects and uses your Jira custom fields for:
 - Start date
 - End date
-- Original Estimate
+Recommended to use with Jira plugin BigGantt or BigPicture to have these fields built in and use with Ganttchart
 
 No manual configuration needed - the bot will automatically detect these fields during initialization by looking for:
 - A field named "Start date"

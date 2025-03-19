@@ -203,25 +203,25 @@ class JiraService(AIValidator):
             tasks_needing_update = []
             for issue in issues:
                 # Debug print the entire issue fields
-                print(f"\n=== Debug Issue {issue.key} ===")
+                # print(f"\n=== Debug Issue {issue.key} ===")
                 print("All fields available:")
                 for field_name in dir(issue.fields):
                     if not field_name.startswith('_'):  # Skip internal attributes
                         try:
                             value = getattr(issue.fields, field_name)
-                            print(f"{field_name}: {value}")
+                            # print(f"{field_name}: {value}")
                         except Exception as e:
                             print(f"Error getting {field_name}: {e}")
                 
                 # Debug print timetracking specifically
                 if hasattr(issue.fields, 'timetracking'):
-                    print("\nTimetracking details:")
-                    print(f"Raw timetracking: {issue.fields.timetracking}")
+                    # print("\nTimetracking details:")
+                    # print(f"Raw timetracking: {issue.fields.timetracking}")
                     for attr in dir(issue.fields.timetracking):
                         if not attr.startswith('_'):
                             try:
                                 value = getattr(issue.fields.timetracking, attr)
-                                print(f"timetracking.{attr}: {value}")
+                                # print(f"timetracking.{attr}: {value}")
                             except Exception as e:
                                 print(f"Error getting timetracking.{attr}: {e}")
 
@@ -766,7 +766,7 @@ Example response format:
         Args:
             project_code: The Jira project code
             channel_members: Dict of channel members with their details
-            recent_messages: List of recent channel messages
+            recent_messages: List of recent channel messages (grouped by day)
             
         Returns:
             Dict mapping usernames to their task suggestions
@@ -800,6 +800,11 @@ Example response format:
                         issue.fields.timetracking.originalEstimate 
                         if hasattr(issue.fields, 'timetracking') and issue.fields.timetracking 
                         else None
+                    ),
+                    'description': (
+                        issue.fields.description
+                        if hasattr(issue.fields, 'description') and issue.fields.description
+                        else 'No description'
                     )
                 }
                 
@@ -834,12 +839,13 @@ Their Active Tasks:
     f"- {task['key']}: {task['summary']} ({task['status']})"
     f"\n  Due: {task['end_date'] or 'No deadline'}"
     f"\n  Estimate: {task['original_estimate'] or 'Not estimated'}"
+    f"\n  Description: {task['description']}"
     for task in user_tasks
 ])}
 
 Unassigned Tasks That Might Be Relevant:
 {chr(10).join([
-    f"- {task['key']}: {task['summary']}"
+    f"- {task['key']}: {task['summary']}\n  Description: {task['description']}"
     for task in unassigned_tasks
 ])}
 
@@ -848,19 +854,28 @@ Recent Team Discussions:
 
 Consider:
 1. Task deadlines (prioritize tasks ending soon)
-2. Task dependencies and blockers
+2. Task dependencies and blockers mentioned in discussions
 3. User's expertise and role
 4. Recent discussions that might affect priorities
 5. Workload balance (don't overload)
+6. Yesterday's progress and today's context from discussions
+7. Dependencies between team members' tasks
+8. Any blockers or challenges mentioned in discussions
 
-Return a clear, friendly suggestion in the user's native language (based on recent messages).
-Focus on specific tasks they should work on today and why.
+Return a clear, friendly, concise suggestion with bullet points in the user's native language (based on recent messages).
+Focus on:
+1. Specific tasks they should work on today and why
+2. How it relates to recent discussions or other team members' work
+3. Any dependencies or coordination needed
+4. Time management suggestions if multiple tasks are urgent
+
 Include task codes (e.g., TES-123) when referencing tasks.
-Keep it concise but informative."""
+Keep it concise.
+If there are urgent tasks (due today/tomorrow), emphasize them."""
 
                 # Get AI suggestion
                 completion = self.client.chat.completions.create(
-                    model="google/gemini-flash-1.5",
+                    model="google/gemini-2.0-flash-lite-001",
                     messages=[{"role": "user", "content": prompt}],
                     extra_headers=self.extra_headers
                 )
