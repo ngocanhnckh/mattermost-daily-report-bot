@@ -937,9 +937,9 @@ class ScrumBot:
                 if member not in EXCLUDED_USERS and member != BOT_USERNAME
             }
             
-            # Analyze the question
+            # Analyze the question with username in the message
             analysis = self.ai_validator.analyze_question(
-                message,
+                f"@{username}: {message}",
                 prior_messages,
                 active_tasks,
                 channel_members

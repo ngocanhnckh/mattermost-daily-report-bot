@@ -223,6 +223,12 @@ class AIValidator:
             }
         
         try:
+            # Convert prior_messages list to string and limit to 3000 words
+            messages_text = " ".join(prior_messages)
+            words = messages_text.split()
+            if len(words) > 3000:
+                messages_text = " ".join(words[:3000]) + " ... (truncated)"
+            
             # First, determine the type of question
             question_type_prompt = f"""Determine if this question is asking for a detailed project report or other types of requests.
 
@@ -369,7 +375,7 @@ Important:
 Question: {question}
 
 Recent Channel Messages:
-{chr(10).join(prior_messages)}
+{messages_text}
 
 Return a JSON response with this format:
 {{
