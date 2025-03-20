@@ -247,9 +247,9 @@ Return a JSON response with this format:
 }}
 
 Important:
-- "project_status": When user asked for a detailed report of the project
+- "project_status": When user specifically asked for a detailed report of the project (not specific task or team member's task).
 - "reminder": When user asks to be reminded about something at a specific time
-- "other": Task creation/updates, general questions, assignment changes, etc.
+- "other": Task creation/updates, general questions, assignment changes, has a specific question about specific task or team member's task  etc, 
 - Only classify as "reminder" if there's a clear time component (e.g., "in 2 hours", "tomorrow at 3pm")"""
 
             # Get question type analysis
@@ -294,10 +294,38 @@ Important:
                     extra_headers=self.extra_headers
                 )
                 
-                reminder_response = reminder_completion.choices[0].message.content
-                reminder_details = json.loads(reminder_response.replace('```json', '').replace('```', '').strip())
+                # Add retry logic for parsing reminder response
+                max_retries = 3
+                reminder_details = None
                 
-                if reminder_details.get('confidence', 0) > 0.7:
+                for attempt in range(max_retries):
+                    try:
+                        reminder_response = reminder_completion.choices[0].message.content
+                        print(f"\nAttempt {attempt + 1} of {max_retries} to parse reminder response:")
+                        print(reminder_response)
+                        
+                        cleaned_response = reminder_response.replace('```json', '').replace('```', '').strip()
+                        reminder_details = json.loads(cleaned_response)
+                        print("Successfully parsed reminder response")
+                        break
+                    except json.JSONDecodeError as e:
+                        print(f"Error parsing reminder response on attempt {attempt + 1}: {e}")
+                        if attempt < max_retries - 1:
+                            # Try the AI call again
+                            reminder_completion = self.client.chat.completions.create(
+                                model="google/gemini-flash-1.5",
+                                messages=[{"role": "user", "content": reminder_prompt}],
+                                extra_headers=self.extra_headers
+                            )
+                        else:
+                            print("Failed to parse reminder response after all attempts")
+                            return {
+                                "needs_action": False,
+                                "action_type": "info",
+                                "response": "I'm having trouble understanding the reminder request. Could you please rephrase it?"
+                            }
+                
+                if reminder_details and reminder_details.get('confidence', 0) > 0.7:
                     # Parse the ISO time string and make it timezone-aware
                     reminder_time = datetime.fromisoformat(reminder_details['parsed_time']['iso_time'])
                     if reminder_time.tzinfo is None:
@@ -595,6 +623,7 @@ Important:
 - If just information is needed, make response clear and helpful
 - If tasks are needed, ensure they're well-defined and actionable
 - One jira user should not have more than 3 tasks has the in progress status, or else they can't focus
+- Aware of user's whole username. Do not assume their firstname or lastname is the same mean they are the same. for example: "Anh Nguyen" and "Viet Anh Nguyen" are 2 different person
 - Answer using user's language and style of communication and aware username when they are asking what they should do to get the correct task belongs to them (user orignal message (with username): "{question}")"""
 
                 # Get main analysis
