@@ -9,12 +9,16 @@ A Mattermost bot that helps teams manage daily scrum reports by sending reminder
 - Sends private message reminders to users who haven't submitted their daily report
 - Supports excluding specific users (e.g., PMs, clients) from the daily report requirement
 - Automatically tracks responses in message threads
+- Web Interface for:
+  - Viewing daily reports and statistics
+  - Managing user and channel configurations
+  - Managing excluded users list
+  - Filtering reports by date, user, and channel
 - AI-powered report validation (Optional):
   - Validates report format and content using OpenRouter AI
   - Provides friendly, context-aware feedback to users
   - Flexible validation rules (allows "none" or "nothing" with explanation)
   - Uses GenZ-friendly communication style
-- View report
 
 ## Setup
 
@@ -30,7 +34,6 @@ A Mattermost bot that helps teams manage daily scrum reports by sending reminder
    MATTERMOST_URL=your_mattermost_server_url
    BOT_TOKEN=your_bot_token
    BOT_USERNAME=your_bot_username
-   EXCLUDED_USERS=user1,user2,user3
    TEAM=yourteamnameinmattermost
    # AI Validation Settings (Optional)
    AI_VALIDATION_ENABLED=true
@@ -51,11 +54,58 @@ A Mattermost bot that helps teams manage daily scrum reports by sending reminder
          "schedule": {
              "report_time": "11:00",    // Time to send daily reports (24-hour format)
              "reminder_interval": 3,     // Hours between reminder messages
-             "timezone": 7              // Timezone offset (e.g., 7 for GMT+7)
+             "timezone": 7,             // Timezone offset (e.g., 7 for GMT+7)
+             "report_deadline_time": "22:00"  // Deadline for submitting reports
+         },
+         "excluded_users": ["user1", "user2"],  // Users exempt from daily reports
+         "users": {
+             "mattermost_username": {
+                 "jira_username": "jira.username",
+                 "phone": "+1234567890",
+                 "bio": "Frontend Developer"
+             }
+         },
+         "channels": {
+             "mattermost-channel": {
+                 "jira_project": "PROJ"
+             }
+         },
+         "jira": {
+             "url": "your_jira_instance_url",
+             "token": "your_jira_api_token"
          }
      }
      ```
-   - If `config.json` is not found, the bot will use default values from `config.py`
+
+## Web Interface
+
+The bot includes a web interface for managing configurations and viewing reports:
+
+### Features
+- Daily Reports Dashboard:
+  - View all daily reports in a sortable table
+  - Filter reports by date, user, and channel
+  - View submission statistics
+  - Track submission rates and missed reports
+
+- Configuration Management:
+  - Manage user mappings (Mattermost to Jira usernames)
+  - Configure channel to Jira project mappings
+  - Manage excluded users list
+  - All changes are saved automatically to config.json
+
+### Access
+1. Start the web server:
+   ```bash
+   python web_server.py
+   ```
+2. Open your browser and navigate to:
+   ```
+   http://localhost:5001
+   ```
+3. Use the navigation menu to switch between:
+   - Daily Reports: View and filter reports
+   - Configuration: Manage user and channel settings
 
 ## AI Validation
 

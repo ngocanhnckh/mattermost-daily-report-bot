@@ -8,10 +8,10 @@ from ai_validator import AIValidator
 import traceback
 from config import (
     MATTERMOST_URL, BOT_TOKEN, BOT_USERNAME,
-    REPORT_TIME, REMINDER_INTERVAL, EXCLUDED_USERS,
+    REPORT_TIME, REMINDER_INTERVAL, get_excluded_users,
     DAILY_REPORT_MESSAGE, REMINDER_MESSAGE, TIMEZONE,
     AI_VALIDATION_ENABLED, OPENROUTER_API_KEY, SITE_URL, SITE_NAME,
-    TEAM_NAME, REPORT_DEADLINE_TIME, USER_MAPPINGS, CHANNEL_MAPPINGS,
+    TEAM_NAME, REPORT_DEADLINE_TIME, get_user_mappings, get_channel_mappings,
     REMIND_TASK_MESSAGE, JIRA_URL
 )
 import ssl
@@ -192,16 +192,16 @@ class ScrumBot:
             channel_name = channel_info.get('name', 'Unknown')
             
             # Get Jira project code for this channel
-            jira_project = CHANNEL_MAPPINGS.get(channel_name, {}).get('jira_project')
+            jira_project = get_channel_mappings().get(channel_name, {}).get('jira_project')
             print(f"\nProcessing channel: {channel_name} (Jira: {jira_project})")
             
             for member in channel_info.get('members', []):
-                if member in EXCLUDED_USERS or member == BOT_USERNAME:
+                if member in get_excluded_users() or member == BOT_USERNAME:
                     print(f"Skipping excluded user: {member}")
                     continue
                     
                 # Get user's Jira mapping
-                user_info = USER_MAPPINGS.get(member)
+                user_info = get_user_mappings().get(member)
                 if not user_info:
                     print(f"No Jira mapping found for user {member}")
                     continue
@@ -374,7 +374,7 @@ class ScrumBot:
             # Get channel info and project code
             channel_info = self.channels.get(channel_id, {})
             channel_name = channel_info.get('name', '')
-            channel_mapping = CHANNEL_MAPPINGS.get(channel_name, {})
+            channel_mapping = get_channel_mappings().get(channel_name, {})
             project_code = channel_mapping.get('jira_project')
             
             if not project_code:
@@ -383,9 +383,9 @@ class ScrumBot:
             
             # Get channel members with their details
             channel_members = {
-                member: USER_MAPPINGS.get(member, {})
+                member: get_user_mappings().get(member, {})
                 for member in channel_info.get('members', [])
-                if member not in EXCLUDED_USERS and member != BOT_USERNAME
+                if member not in get_excluded_users() and member != BOT_USERNAME
             }
             
             # Validate report with AI
@@ -519,7 +519,7 @@ class ScrumBot:
                         continue
                     
                     # Get Jira project code for this channel
-                    channel_mapping = CHANNEL_MAPPINGS.get(channel_name)
+                    channel_mapping = get_channel_mappings().get(channel_name)
                     if not channel_mapping:
                         print(f"No Jira mapping found for channel {channel_name}, skipping")
                         continue
@@ -578,7 +578,8 @@ class ScrumBot:
             user_task_mentions = []
 
             # Get Jira project code for this channel
-            jira_project = CHANNEL_MAPPINGS.get(channel_name, {}).get('jira_project')
+            channel_mappings = get_channel_mappings()
+            jira_project = channel_mappings.get(channel_name, {}).get('jira_project')
             print(f"\nGetting tasks for channel {channel_name} (Jira: {jira_project})")
 
             if jira_project and self.jira_service.enabled:
@@ -631,20 +632,21 @@ class ScrumBot:
                     recent_messages.extend(today_messages)
 
                 # Get task suggestions for each member
+                user_mappings = get_user_mappings()
                 suggestions = self.jira_service.generate_task_suggestions(
                     project_code=jira_project,
-                    channel_members=USER_MAPPINGS,
+                    channel_members=user_mappings,
                     recent_messages=recent_messages
                 )
                 
                 print(f"Suggestions: {suggestions}")
 
                 for member in self.channels[channel_id].get('members', []):
-                    if member in EXCLUDED_USERS or member == BOT_USERNAME:
+                    if member in get_excluded_users() or member == BOT_USERNAME:
                         continue
 
                     # Get user's Jira mapping
-                    user_info = USER_MAPPINGS.get(member, {})
+                    user_info = user_mappings.get(member, {})
                     jira_username = user_info.get('jira_username', member)
                     
                     # Get active tasks
@@ -890,7 +892,7 @@ class ScrumBot:
             channel_name = channel_info.get('name', '')
             
             # Get Jira project code
-            channel_mapping = CHANNEL_MAPPINGS.get(channel_name, {})
+            channel_mapping = get_channel_mappings().get(channel_name, {})
             project_code = channel_mapping.get('jira_project')
             
             if not project_code:
@@ -932,9 +934,9 @@ class ScrumBot:
             
             # Get channel members with their details
             channel_members = {
-                member: USER_MAPPINGS.get(member, {})
+                member: get_user_mappings().get(member, {})
                 for member in channel_info.get('members', [])
-                if member not in EXCLUDED_USERS and member != BOT_USERNAME
+                if member not in get_excluded_users() and member != BOT_USERNAME
             }
             
             # Analyze the question with username in the message
@@ -963,7 +965,7 @@ class ScrumBot:
                     for task in analysis['tasks']:
                         try:
                             # Get assignee's Jira username
-                            assignee_info = USER_MAPPINGS.get(task['assignee'])
+                            assignee_info = get_user_mappings().get(task['assignee'])
                             if not assignee_info:
                                 continue
                                 
@@ -1004,7 +1006,7 @@ class ScrumBot:
                             if is_story and 'sub_tasks' in task:
                                 for sub_task in task['sub_tasks']:
                                     # Get sub-task assignee's Jira username
-                                    sub_assignee_info = USER_MAPPINGS.get(sub_task['assignee'])
+                                    sub_assignee_info = get_user_mappings().get(sub_task['assignee'])
                                     if not sub_assignee_info:
                                         continue
                                         
@@ -1068,7 +1070,7 @@ class ScrumBot:
                                 created_sub_tasks = []
                                 for sub_task in update['sub_tasks']:
                                     # Get sub-task assignee's Jira username
-                                    sub_assignee_info = USER_MAPPINGS.get(sub_task['assignee'])
+                                    sub_assignee_info = get_user_mappings().get(sub_task['assignee'])
                                     if not sub_assignee_info:
                                         continue
                                         
@@ -1135,7 +1137,7 @@ class ScrumBot:
                                 
                                 # Assignee update
                                 if 'assignee' in update['fields']:
-                                    assignee_info = USER_MAPPINGS.get(update['fields']['assignee'])
+                                    assignee_info = get_user_mappings().get(update['fields']['assignee'])
                                     if assignee_info:
                                         update_dict['assignee'] = {'name': assignee_info['jira_username']}
                                 

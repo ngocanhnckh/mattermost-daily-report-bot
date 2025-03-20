@@ -2,7 +2,7 @@ from jira import JIRA
 import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
-from config import JIRA_URL, JIRA_TOKEN, USER_MAPPINGS
+from config import JIRA_URL, JIRA_TOKEN, get_user_mappings
 import traceback
 import json
 from ai_validator import AIValidator
@@ -285,7 +285,7 @@ class JiraService(AIValidator):
             # Format user information with their roles/expertise
             user_info = []
             for matt_username, jira_username in channel_members.items():
-                user_info_dict = USER_MAPPINGS.get(matt_username, {})
+                user_info_dict = get_user_mappings().get(matt_username, {})
                 bio = user_info_dict.get('bio', '')
                 user_info.append(f"- {matt_username} ({jira_username}): {bio}")
             

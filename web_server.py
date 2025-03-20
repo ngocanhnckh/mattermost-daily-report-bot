@@ -4,6 +4,8 @@ import calendar
 from database import Database
 from view_reports import get_monthly_reports, analyze_reports
 import os
+import json
+from config import load_config_json, get_user_mappings, get_channel_mappings
 
 app = Flask(__name__)
 db = Database()
@@ -11,6 +13,114 @@ db = Database()
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/config')
+def config_page():
+    return render_template('config.html')
+
+@app.route('/api/config')
+def get_config():
+    """Get current configuration."""
+    config = load_config_json()
+    return jsonify({
+        'users': get_user_mappings(),
+        'channels': get_channel_mappings(),
+        'excluded_users': config.get('excluded_users', [])
+    })
+
+@app.route('/api/config/users/<username>', methods=['GET'])
+def get_user(username):
+    """Get user configuration."""
+    users = get_user_mappings()
+    if username in users:
+        return jsonify(users[username])
+    return jsonify({'error': 'User not found'}), 404
+
+@app.route('/api/config/channels/<name>', methods=['GET'])
+def get_channel(name):
+    """Get channel configuration."""
+    channels = get_channel_mappings()
+    if name in channels:
+        return jsonify(channels[name])
+    return jsonify({'error': 'Channel not found'}), 404
+
+@app.route('/api/config/users/<username>', methods=['POST'])
+def update_user(username):
+    """Update or create user configuration."""
+    try:
+        data = request.get_json()
+        config = load_config_json()
+        
+        # Update user configuration
+        if 'users' not in config:
+            config['users'] = {}
+        config['users'][username] = data
+        
+        # Save to file
+        with open('config.json', 'w') as f:
+            json.dump(config, f, indent=4)
+            
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/config/channels/<name>', methods=['POST'])
+def update_channel(name):
+    """Update or create channel configuration."""
+    try:
+        data = request.get_json()
+        config = load_config_json()
+        
+        # Update channel configuration
+        if 'channels' not in config:
+            config['channels'] = {}
+        config['channels'][name] = data
+        
+        # Save to file
+        with open('config.json', 'w') as f:
+            json.dump(config, f, indent=4)
+            
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/config/users/<username>', methods=['DELETE'])
+def delete_user(username):
+    """Delete user configuration."""
+    try:
+        config = load_config_json()
+        
+        # Remove user if exists
+        if 'users' in config and username in config['users']:
+            del config['users'][username]
+            
+            # Save to file
+            with open('config.json', 'w') as f:
+                json.dump(config, f, indent=4)
+                
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/config/channels/<name>', methods=['DELETE'])
+def delete_channel(name):
+    """Delete channel configuration."""
+    try:
+        config = load_config_json()
+        
+        # Remove channel if exists
+        if 'channels' in config and name in config['channels']:
+            del config['channels'][name]
+            
+            # Save to file
+            with open('config.json', 'w') as f:
+                json.dump(config, f, indent=4)
+                
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'error': 'Channel not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/reports')
 def get_reports():
@@ -68,6 +178,58 @@ def get_reports():
             'usernames': sorted(all_users)
         }
     })
+
+@app.route('/api/config/excluded-users', methods=['POST'])
+def add_excluded_user():
+    """Add a user to the excluded users list."""
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        
+        if not username:
+            return jsonify({'success': False, 'error': 'Username is required'}), 400
+            
+        config = load_config_json()
+        
+        # Initialize excluded_users if it doesn't exist
+        if 'excluded_users' not in config:
+            config['excluded_users'] = []
+            
+        # Add username if not already in the list
+        if username not in config['excluded_users']:
+            config['excluded_users'].append(username)
+            
+            # Save to file
+            with open('config.json', 'w') as f:
+                json.dump(config, f, indent=4)
+                
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'User is already in the excluded list'}), 400
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/config/excluded-users/<username>', methods=['DELETE'])
+def delete_excluded_user(username):
+    """Remove a user from the excluded users list."""
+    try:
+        config = load_config_json()
+        
+        # Check if excluded_users exists and username is in the list
+        if 'excluded_users' in config and username in config['excluded_users']:
+            config['excluded_users'].remove(username)
+            
+            # Save to file
+            with open('config.json', 'w') as f:
+                json.dump(config, f, indent=4)
+                
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'User not found in excluded list'}), 404
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist

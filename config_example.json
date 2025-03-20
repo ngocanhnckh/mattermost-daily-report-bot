@@ -10,6 +10,7 @@
         "timezone": 7,
         "report_deadline_time": "22:00"
     },
+    "excluded_users": ["system", "admin"],
     "users": {
       "anh.nguyen": {
         "jira_username": "anh.nguyen",
