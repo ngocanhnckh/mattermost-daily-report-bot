@@ -335,31 +335,43 @@ class ScrumBot:
                         print(f"User {member} is the bot, skipping")
                         continue
                     
-                    # Get user's active tasks
-                    tasks = self.jira_service.get_user_active_tasks(member, channel_info.get('jira_project', ''))
-                    print(f"Active tasks for {member}: {tasks}")
+                    # Send reminder
+                    print(f"Sending reminder to {member}")
+                    self._send_reminder_dm(member)
+            
+            # Check custom reminders (new section)
+            print("\nChecking custom reminders...")
+            for channel_id, reminders in self.pending_reminders.items():
+                for username, reminder_info in list(reminders.items()):  # Use list to avoid modification during iteration
+                    # Skip if this is not a custom reminder
+                    if not isinstance(reminder_info, dict) or 'time' not in reminder_info:
+                        continue
+                        
+                    reminder_time = reminder_info['time']
+                    # Compare only hours and minutes
+                    current_hm = current_time.replace(second=0, microsecond=0)
+                    reminder_hm = reminder_time.replace(second=0, microsecond=0)
                     
-                    # Only send reminder if user has active tasks
-                    if tasks:
-                        print(f"User {member} has {len(tasks)} active tasks")
-                        # Check if we've already sent a reminder to this user in this interval
-                        if channel_id in self.pending_reminders and member in self.pending_reminders[channel_id]:
-                            last_reminder = self.pending_reminders[channel_id][member]
-                            time_since_last = current_time - last_reminder
-                            print(f"Last reminder sent {time_since_last} ago")
-                            if time_since_last < timedelta(hours=reminder_interval):
-                                print(f"Already sent reminder to {member} {time_since_last} ago, skipping")
-                                continue
-                        
-                        print(f"User {member} has not reported in channel {channel_name}, sending reminder")
-                        self._send_reminder_dm(member)
-                        # Update the last reminder time
-                        if channel_id not in self.pending_reminders:
-                            self.pending_reminders[channel_id] = {}
-                        self.pending_reminders[channel_id][member] = current_time
-                    else:
-                        print(f"User {member} has no active tasks, skipping reminder")
-                        
+                    if current_hm >= reminder_hm:
+                        print(f"Sending custom reminder to {username}")
+                        try:
+                            # Create or get DM channel
+                            user = self.driver.users.get_user_by_username(username)
+                            dm_channel = self.driver.channels.create_direct_message_channel([self.bot_id, user['id']])
+                            
+                            # Send the reminder
+                            self.driver.posts.create_post({
+                                'channel_id': dm_channel['id'],
+                                'message': f"🔔 **Reminder**: {reminder_info['message']}"
+                            })
+                            
+                            # Remove the reminder after sending
+                            del reminders[username]
+                            print(f"Reminder sent and removed for {username}")
+                        except Exception as e:
+                            print(f"Error sending custom reminder to {username}: {e}")
+                            print(traceback.format_exc())
+                            
         except Exception as e:
             print(f"Error in _check_reminders: {e}")
             print(traceback.format_exc())
@@ -1507,7 +1519,9 @@ class ScrumBot:
                     break
             
             # Get recently updated tasks for this project
-            active_tasks = self.jira_service.get_recent_project_tasks(project_code)
+            active_tasks = []
+            if project_code:
+                active_tasks = self.jira_service.get_recent_project_tasks(project_code)
             
             # Get channel members with their details
             channel_members = {
@@ -1524,15 +1538,50 @@ class ScrumBot:
                 channel_members
             )
             
+            print("Analysis:")
+            print(analysis)
+            
             if analysis['needs_action']:
-                response, created_tasks, updated_tasks = await self._handle_task_actions(analysis, project_code)
-                
-                # Send response
-                self.driver.posts.create_post({
-                    'channel_id': channel_id,
-                    'message': response,
-                    'root_id': root_id
-                })
+                if analysis['action_type'] == 'reminder':
+                    # Handle reminder request
+                    reminder_info = analysis.get('reminder', {})
+                    if reminder_info and 'time' in reminder_info:
+                        # Initialize channel's pending reminders if not exists
+                        if channel_id not in self.pending_reminders:
+                            self.pending_reminders[channel_id] = {}
+                            
+                        # Store the reminder
+                        target_username = reminder_info.get('username', username)  # Default to sender if no target specified
+                        reminder_content = {
+                            'time': datetime.fromisoformat(reminder_info['time']),
+                            'message': reminder_info['message']
+                        }
+                        self.pending_reminders[channel_id][target_username] = reminder_content
+                        print(reminder_content)
+                        # Send confirmation
+                        self.driver.posts.create_post({
+                            'channel_id': channel_id,
+                            'message': analysis['response'],
+                            'root_id': root_id
+                        })
+                        print(f"Reminder sent to {target_username}")
+                        
+                elif project_code:  # Handle other actions only if project code exists
+                    response, created_tasks, updated_tasks = await self._handle_task_actions(analysis, project_code)
+                    
+                    # Send response
+                    self.driver.posts.create_post({
+                        'channel_id': channel_id,
+                        'message': response,
+                        'root_id': root_id
+                    })
+                else:
+                    # Send response for non-project channels
+                    self.driver.posts.create_post({
+                        'channel_id': channel_id,
+                        'message': "Sorry, this channel is not configured with a Jira project.",
+                        'root_id': root_id
+                    })
                 
                 print(f"Response sent to channel {channel_name}")
                 

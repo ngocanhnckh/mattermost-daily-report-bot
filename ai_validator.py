@@ -2,7 +2,7 @@ from openai import OpenAI
 import json
 from typing import Dict, Optional, List
 import traceback
-from config import JIRA_URL
+from config import JIRA_URL, TIMEZONE
 from datetime import datetime
 
 class AIValidator:
@@ -190,14 +190,15 @@ class AIValidator:
         
         Args:
             question: The user's question
-            prior_messages: List of 10 prior messages in the channel
+            prior_messages: List of prior messages in the channel
             active_tasks: List of active tasks in the sprint
             channel_members: Dict of channel members with their details
             
         Returns:
             Dict containing:
-            - needs_action (bool): Whether tasks need to be created
+            - needs_action (bool): Whether tasks need to be created/updated or reminder set
             - response (str): Text response to the user's question
+            - action_type (str): "create", "update", "reminder", "info", or "project_status"
             - tasks (List[Dict]): List of tasks to create (if needs_action is True)
               Each task contains:
               - type (str): "story" or "task"
@@ -215,6 +216,10 @@ class AIValidator:
               - action (str): "update" or "convert_to_story"
               - fields (Dict): Fields to update
               - sub_tasks (List[Dict]): Sub-tasks to create if converting to story
+            - reminder (Dict): Only present if action_type is "reminder"
+              - time (str): ISO format datetime when to send reminder
+              - message (str): What to remind about
+              - username (str): Who to remind
         """
         if not self.enabled or not self.client:
             return {
@@ -230,27 +235,22 @@ class AIValidator:
                 messages_text = " ".join(words[:3000]) + " ... (truncated)"
             
             # First, determine the type of question
-            question_type_prompt = f"""Determine if this question is asking for a detailed project report or other types of requests.
+            question_type_prompt = f"""Determine if this question is asking for a project status report, a reminder request, or other types of requests.
 
 Question: {question}
 
 Return a JSON response with this format:
 {{
-    "type": "project_status" | "other",  // Type of question
+    "type": "project_status" | "reminder" | "other",  // Type of question
     "confidence": float,  // How confident in this classification (0-1)
-    "reason": "Explanation of why this is classified as status or other"
+    "reason": "Explanation of why this is classified this way"
 }}
 
-Important: DO NOT INDICATE "project_status" in random questions, only indicate when user asked specifically for a detailed report of the project
-- "project_status" includes:
-  * When user asked for a detailed report of the project
-- "other" includes:
-  * Questions about what to do next, or execute some action
-  * Task creation requests
-  * Specific task updates (status changes, estimates)
-  * Task updates (status changes, estimates)
-  * General questions
-  * Assignment changes"""
+Important:
+- "project_status": When user asked for a detailed report of the project
+- "reminder": When user asks to be reminded about something at a specific time
+- "other": Task creation/updates, general questions, assignment changes, etc.
+- Only classify as "reminder" if there's a clear time component (e.g., "in 2 hours", "tomorrow at 3pm")"""
 
             # Get question type analysis
             type_completion = self.client.chat.completions.create(
@@ -262,7 +262,60 @@ Important: DO NOT INDICATE "project_status" in random questions, only indicate w
             type_response = type_completion.choices[0].message.content
             question_type = json.loads(type_response.replace('```json', '').replace('```', '').strip())
             
-            # If it's a project status question, use the status report prompt
+            # If it's a reminder request with high confidence, handle it
+            if question_type['type'] == 'reminder' and question_type['confidence'] > 0.7:
+                reminder_prompt = f"""Parse this reminder request and extract the details.
+
+Request: {question}
+
+Return a JSON response with this format:
+{{
+    "parsed_time": {{
+        "original": "the original time expression",
+        "iso_time": "YYYY-MM-DD HH:MM:SS+HH:MM"
+    }},
+    "message": "What to remind about",
+    "target_user": "username who should be reminded",
+    "confidence": float  // How confident in the parsing (0-1)
+}}
+
+Important:
+- Parse relative times ("in 2 hours") and specific times ("at 5pm tomorrow")
+- Extract a clear message about what the reminder is for
+- If no specific user is mentioned, use the original requester
+- Today's date is {datetime.now(TIMEZONE).strftime('%Y-%m-%d')}
+- Use 24-hour format for times
+- Always include timezone offset in iso_time
+- If time is ambiguous, set confidence lower"""
+
+                reminder_completion = self.client.chat.completions.create(
+                    model="google/gemini-flash-1.5",
+                    messages=[{"role": "user", "content": reminder_prompt}],
+                    extra_headers=self.extra_headers
+                )
+                
+                reminder_response = reminder_completion.choices[0].message.content
+                reminder_details = json.loads(reminder_response.replace('```json', '').replace('```', '').strip())
+                
+                if reminder_details.get('confidence', 0) > 0.7:
+                    # Parse the ISO time string and make it timezone-aware
+                    reminder_time = datetime.fromisoformat(reminder_details['parsed_time']['iso_time'])
+                    if reminder_time.tzinfo is None:
+                        reminder_time = TIMEZONE.localize(reminder_time)
+                    
+                    
+                    return {
+                        "needs_action": True,
+                        "action_type": "reminder",
+                        "response": f"I'll remind {reminder_details['target_user']} about this at {reminder_details['parsed_time']['original']}! 🔔",
+                        "reminder": {
+                            "time": reminder_time.isoformat(),  # This will include timezone info
+                            "message": reminder_details['message'],
+                            "username": reminder_details['target_user']
+                        }
+                    }
+            
+            # If it's a project status question, use the existing status report logic
             if question_type['type'] == 'project_status':
                 today = datetime.now()
                 
@@ -554,6 +607,9 @@ Important:
                 response = completion.choices[0].message.content
                 cleaned_response = response.replace('```json', '').replace('```', '').strip()
                 result = json.loads(cleaned_response)
+                
+                print("AI response:")
+                print(result)
                 
                 return result
                 
