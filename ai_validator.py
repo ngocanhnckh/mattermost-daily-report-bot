@@ -529,7 +529,7 @@ Return a JSON response with this format:
 }}
 
 Important:
-- Answer using user's language and style of communication
+- Do not change time_estimates of tasks that has status Done
 - Today's date is {today_str}, all start dates must be >= today
 - Look for keywords indicating task updates like "done", "complete", "finished", "move", "change", "update", "extend"
 - For status updates, user might say things like "I finished XXX-123" or "Moving XXX-123 to Done"
@@ -541,7 +541,8 @@ Important:
 - Do not create duplicate tasks
 - If just information is needed, make response clear and helpful
 - If tasks are needed, ensure they're well-defined and actionable
-- One jira user should not have more than 3 tasks has the in progress status, or else they can't focus"""
+- One jira user should not have more than 3 tasks has the in progress status, or else they can't focus
+- Answer using user's language and style of communication (user question: "{question}")"""
 
                 # Get main analysis
                 completion = self.client.chat.completions.create(

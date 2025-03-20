@@ -192,7 +192,8 @@ class JiraService(AIValidator):
             print("\nStep 1: Fetching active sprint tasks...")
             jql = (
                 f"project = {project_code} "
-                f"AND sprint in openSprints()"
+                f"AND sprint in openSprints() "
+                f"AND status IN ('To Do', 'In Progress')"
             )
             issues = self.jira.search_issues(jql, maxResults=1000)
             print(f"Found {len(issues)} tasks in active sprint")
@@ -407,11 +408,6 @@ class JiraService(AIValidator):
                     "{self.start_date_field}": "YYYY-MM-DD",  # Start date field
                     "assignee": "jira.username",
                     "timeoriginalestimate": "4h"
-                }},
-                "reasoning": {{
-                    "assignee_choice": "Explanation of why this assignee was chosen...",
-                    "time_estimate": "Explanation of how the time was estimated based on description and complexity...",
-                    "date_planning": "Explanation of why these dates were chosen considering priority and workload..."
                 }}
             }}
             
@@ -420,7 +416,7 @@ class JiraService(AIValidator):
             - {self.start_date_field} = Start date
             - timeoriginalestimate = Original Estimate (in hours)
             
-            Please provide detailed reasoning for each decision in the 'reasoning' field, but note that this field is for explanation only and won't be used in the actual Jira updates."""
+           """
             
             print(f"Prompt: {prompt}")
             max_retries = 3
@@ -485,10 +481,8 @@ class JiraService(AIValidator):
                             if 'Original Estimate' in task['missing_fields']:
                                 estimate = update['updates'].get('timeoriginalestimate')
                                 if estimate and isinstance(estimate, str) and estimate.endswith('h'):
-                                    update_dict['timetracking'] = {
-                                        'originalEstimate': estimate,
-                                        'remainingEstimate': estimate
-                                    }
+                                    update_dict['timeoriginalestimate'] = estimate
+                                    update_dict['timeestimate'] = estimate  # Also set remaining estimate
                             break
                     
                     if update_dict:
