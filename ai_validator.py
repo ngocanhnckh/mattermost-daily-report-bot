@@ -106,7 +106,7 @@ class AIValidator:
                 print("Calling OpenRouter API...")
                 # Call the AI
                 completion = self.client.chat.completions.create(
-                    model="google/gemini-flash-1.5",
+                    model="google/gemini-2.0-flash-lite-001",
                     extra_headers=self.extra_headers,
                     messages=[
                         {

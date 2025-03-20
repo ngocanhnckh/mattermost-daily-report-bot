@@ -149,11 +149,14 @@ class ScrumBot:
                 print(f"\n=== Scheduler Check at {current_time.strftime('%Y-%m-%d %H:%M:%S')} ===")
                 print(f"Current time: {current_hour}:{current_minute}")
                 print(f"Target time: {REPORT_TIME}")
+                print(f"Deadline time: {REPORT_DEADLINE_TIME}")
                 print(f"Last run date: {last_run_date}")
                 print(f"Current date: {current_date}")
                 
                 # Check if it's time to run and we haven't run today
                 target_hour, target_minute = REPORT_TIME.split(':')
+                deadline_hour, deadline_minute = REPORT_DEADLINE_TIME.split(':')
+                
                 print(f"Comparing - Current: {current_hour}:{current_minute} vs Target: {target_hour}:{target_minute}")
                 print(f"Time match: {current_hour == target_hour and current_minute == target_minute}")
                 print(f"Date check: {current_date != last_run_date}")
@@ -169,6 +172,12 @@ class ScrumBot:
                 else:
                     print("Not time for daily report yet")
                 
+                # Check if it's deadline time for AI-generated reports
+                if (current_hour == deadline_hour and 
+                    current_minute == deadline_minute):
+                    print(f"\n!!! CHECKING FOR MISSING REPORTS at {current_time} !!!")
+                    self._check_and_send_ai_reports()
+                
                 # Check reminders every minute
                 self._check_reminders()
                 print("Checked reminders")
@@ -179,6 +188,91 @@ class ScrumBot:
                 print(f"Error in scheduler loop: {str(e)}")
                 print(f"Full error: {traceback.format_exc()}")
                 time.sleep(60)
+
+    def _check_and_send_ai_reports(self):
+        """Check for users who haven't reported and send AI-generated reports."""
+        try:
+            print("\n=== Checking for Missing Reports ===")
+            current_time = datetime.now(TIMEZONE)
+            
+            for channel_id, channel_info in self.channels.items():
+                try:
+                    channel_name = channel_info.get('name', '')
+                    print(f"\nProcessing channel: {channel_name}")
+                    
+                    # Skip DM channels and Town Square
+                    if '__' in channel_name or channel_name == '' or channel_name == 'town-square':
+                        print(f"Skipping channel: {channel_name}")
+                        continue
+                    
+                    # Get channel members
+                    members = channel_info.get('members', [])
+                    print(f"Channel members: {members}")
+                    
+                    # Get reported users for today
+                    reported_users = set(self.db.get_today_reports(channel_id))
+                    print(f"Users who have reported: {reported_users}")
+                    
+                    # Get the daily report post ID for this channel
+                    if channel_id not in self.daily_report_posts:
+                        print(f"No daily report post found for channel {channel_name}")
+                        continue
+                        
+                    root_id = self.daily_report_posts[channel_id]['post_id']
+                    
+                    # Check each member who hasn't reported
+                    for member in members:
+                        if member in reported_users:
+                            print(f"User {member} has already reported, skipping")
+                            continue
+                            
+                        if member in get_excluded_users():
+                            print(f"User {member} is excluded, skipping")
+                            continue
+                            
+                        if member == BOT_USERNAME:
+                            print(f"User {member} is the bot, skipping")
+                            continue
+                        
+                        print(f"\nGenerating AI report for {member}")
+                        
+                        # Get user's recent messages
+                        recent_messages = self._get_user_recent_messages(channel_id, member)
+                        
+                        # Get user's active tasks
+                        user_info = get_user_mappings().get(member, {})
+                        jira_username = user_info.get('jira_username', member)
+                        jira_project = channel_info.get('jira_project')
+                        
+                        if not jira_project:
+                            print(f"No Jira project found for channel {channel_name}")
+                            continue
+                            
+                        active_tasks = self.jira_service.get_user_active_tasks(jira_username, jira_project)
+                        recent_updates = self.jira_service.get_user_recent_updates(jira_username, jira_project)
+                        
+                        # Generate AI report
+                        ai_report = self.message_analyzer.generate_report(
+                            username=member,
+                            messages=recent_messages,
+                            active_tasks=active_tasks,
+                            recent_updates=recent_updates
+                        )
+                        
+                        if ai_report:
+                            print(f"Sending AI-generated report for {member}")
+                            self._send_ai_generated_report(channel_id, member, ai_report, root_id)
+                        else:
+                            print(f"Failed to generate AI report for {member}")
+                            
+                except Exception as e:
+                    print(f"Error processing channel {channel_name}: {str(e)}")
+                    print(f"Full error: {traceback.format_exc()}")
+                    continue
+                    
+        except Exception as e:
+            print(f"Error in _check_and_send_ai_reports: {str(e)}")
+            print(f"Full error: {traceback.format_exc()}")
 
     def _check_reminders(self):
         """Check and send reminders for daily reports."""
@@ -312,7 +406,7 @@ class ScrumBot:
                     print(f"Parsed event into dict: {event}")
                 except json.JSONDecodeError as e:
                     print(f"Failed to parse event as JSON: {e}")
-                    return await asyncio.sleep(0)  # Return an awaitable
+                    return
 
             # Debug the event structure
             print(f"Event keys: {event.keys() if isinstance(event, dict) else 'No keys (not a dict)'}")
@@ -322,7 +416,7 @@ class ScrumBot:
             # Handle the initial hello event
             if event.get('event') == 'hello':
                 print("Connected to websocket")
-                return await asyncio.sleep(0)  # Return an awaitable
+                return
             
             # Only proceed if we have data and it's a post event
             if event.get('event') == 'posted':
@@ -335,23 +429,441 @@ class ScrumBot:
                         print(f"Parsed post data: {post_data}")
                         
                         if post_data['user_id'] != self.bot_id:  # Ignore bot's own messages
+                            # Check if this is a DM channel by checking channel_type in event data
+                            if data.get('channel_type') == 'D':
+                                print(f"Received DM message from user {post_data['user_id']}")
+                                await self._handle_dm(post_data)
                             # Check if bot is mentioned
-                            if f'@{BOT_USERNAME}' in post_data['message']:
-                                self._handle_bot_mention(post_data)
+                            elif f'@{BOT_USERNAME}' in post_data['message']:
+                                await self._handle_bot_mention(post_data)
                             elif post_data.get('root_id'):  # This is a reply in a thread
                                 self._handle_report_reply(post_data)
                             else:
                                 self._handle_channel_message(post_data)
                     except json.JSONDecodeError as e:
                         print(f"Failed to parse post data: {e}")
-            
-            return await asyncio.sleep(0)  # Return an awaitable
 
         except Exception as e:
             print(f"Error in websocket event handler: {e}")
             print(f"Error type: {type(e)}")
             print(f"Traceback: {traceback.format_exc()}")
-            return await asyncio.sleep(0)  # Return an awaitable
+
+    async def _handle_task_actions(self, analysis: Dict, project_code: str) -> tuple[str, List[Dict], List[Dict]]:
+        """Handle task creation and updates based on AI analysis.
+        
+        Args:
+            analysis: The AI analysis result
+            project_code: The Jira project code
+            
+        Returns:
+            Tuple of (response message, created tasks, updated tasks)
+        """
+        created_tasks = []
+        updated_tasks = []
+        
+        if analysis.get('action_type') == 'create':
+            # Get the active sprint ID first
+            boards = self.jira_service.jira.boards(projectKeyOrID=project_code)
+            sprint_id = None
+            for board in boards:
+                sprints = self.jira_service.jira.sprints(board.id, state='active')
+                if sprints:
+                    sprint_id = sprints[0].id
+                    break
+            
+            # Create new tasks
+            for task in analysis.get('tasks', []):
+                try:
+                    # Get assignee's Jira username
+                    assignee_info = get_user_mappings().get(task['assignee'])
+                    if not assignee_info:
+                        continue
+                        
+                    # Determine if this is a story or regular task
+                    is_story = task['type'] == 'story'
+                    
+                    # Create issue in Jira
+                    issue_dict = {
+                        'project': {'key': project_code},
+                        'summary': task['title'],
+                        'description': task['description'],
+                        'issuetype': {'name': 'Story' if is_story else 'Task'},
+                        'assignee': {'name': assignee_info['jira_username']},
+                        self.jira_service.start_date_field: task['start_date'],
+                        self.jira_service.end_date_field: task['end_date'],
+                        'timetracking': {
+                            'originalEstimate': task['estimate'],
+                            'remainingEstimate': task['estimate']
+                        }
+                    }
+                    
+                    new_issue = self.jira_service.jira.create_issue(fields=issue_dict)
+                    
+                    # Add the issue to the active sprint
+                    if sprint_id:
+                        self.jira_service.jira.add_issues_to_sprint(sprint_id, [new_issue.key])
+                    
+                    created_task = {
+                        'key': new_issue.key,
+                        'url': f"{JIRA_URL}/browse/{new_issue.key}",
+                        'assignee': task['assignee'],
+                        'title': task['title'],
+                        'type': task['type'],
+                        'sub_tasks': []
+                    }
+                    
+                    # If this is a story, create sub-tasks
+                    if is_story and 'sub_tasks' in task:
+                        for sub_task in task['sub_tasks']:
+                            # Get sub-task assignee's Jira username
+                            sub_assignee_info = get_user_mappings().get(sub_task['assignee'])
+                            if not sub_assignee_info:
+                                continue
+                                
+                            # Create sub-task
+                            sub_task_dict = {
+                                'project': {'key': project_code},
+                                'summary': sub_task['title'],
+                                'description': sub_task['description'],
+                                'issuetype': {'name': 'Sub-task'},
+                                'parent': {'key': new_issue.key},
+                                'assignee': {'name': sub_assignee_info['jira_username']},
+                                self.jira_service.start_date_field: sub_task['start_date'],
+                                self.jira_service.end_date_field: sub_task['end_date'],
+                                'timetracking': {
+                                    'originalEstimate': sub_task['estimate'],
+                                    'remainingEstimate': sub_task['estimate']
+                                }
+                            }
+                            
+                            new_sub_task = self.jira_service.jira.create_issue(fields=sub_task_dict)
+                            
+                            # Add sub-task to sprint
+                            if sprint_id:
+                                self.jira_service.jira.add_issues_to_sprint(sprint_id, [new_sub_task.key])
+                            
+                            created_task['sub_tasks'].append({
+                                'key': new_sub_task.key,
+                                'url': f"{JIRA_URL}/browse/{new_sub_task.key}",
+                                'assignee': sub_task['assignee'],
+                                'title': sub_task['title']
+                            })
+                    
+                    created_tasks.append(created_task)
+                    
+                except Exception as e:
+                    print(f"Error creating task: {e}")
+                    continue
+                
+        elif analysis.get('action_type') == 'update':
+            # Handle task updates
+            for update in analysis.get('updates', []):
+                try:
+                    if update['action'] == 'convert_to_story':
+                        # Get the original task
+                        original_task = self.jira_service.jira.issue(update['key'])
+                        
+                        # Create new story
+                        story_dict = {
+                            'project': {'key': project_code},
+                            'summary': original_task.fields.summary,
+                            'description': original_task.fields.description,
+                            'issuetype': {'name': 'Story'},
+                            'assignee': {'name': original_task.fields.assignee.name},
+                            self.jira_service.start_date_field: getattr(original_task.fields, self.jira_service.start_date_field, None),
+                            self.jira_service.end_date_field: getattr(original_task.fields, self.jira_service.end_date_field, None)
+                        }
+                        
+                        new_story = self.jira_service.jira.create_issue(fields=story_dict)
+                        
+                        # Create sub-tasks
+                        created_sub_tasks = []
+                        for sub_task in update['sub_tasks']:
+                            # Get sub-task assignee's Jira username
+                            sub_assignee_info = get_user_mappings().get(sub_task['assignee'])
+                            if not sub_assignee_info:
+                                continue
+                                
+                            # Create sub-task
+                            sub_task_dict = {
+                                'project': {'key': project_code},
+                                'summary': sub_task['title'],
+                                'description': sub_task['description'],
+                                'issuetype': {'name': 'Sub-task'},
+                                'parent': {'key': new_story.key},
+                                'assignee': {'name': sub_assignee_info['jira_username']},
+                                self.jira_service.start_date_field: sub_task['start_date'],
+                                self.jira_service.end_date_field: sub_task['end_date'],
+                                'timetracking': {
+                                    'originalEstimate': sub_task['estimate'],
+                                    'remainingEstimate': sub_task['estimate']
+                                }
+                            }
+                            
+                            new_sub_task = self.jira_service.jira.create_issue(fields=sub_task_dict)
+                            created_sub_tasks.append({
+                                'key': new_sub_task.key,
+                                'url': f"{JIRA_URL}/browse/{new_sub_task.key}",
+                                'assignee': sub_task['assignee'],
+                                'title': sub_task['title']
+                            })
+                        
+                        # Delete the original task
+                        original_task.delete()
+                        
+                        updated_tasks.append({
+                            'key': new_story.key,
+                            'url': f"{JIRA_URL}/browse/{new_story.key}",
+                            'summary': original_task.fields.summary,
+                            'action': 'converted_to_story',
+                            'original_key': update['key'],
+                            'sub_tasks': created_sub_tasks,
+                            'reason': update['reason']
+                        })
+                        
+                    else:  # Regular update
+                        issue = self.jira_service.jira.issue(update['key'])
+                        update_dict = {}
+                        
+                        # Status update
+                        if 'status' in update['fields']:
+                            # Get transition ID for the desired status
+                            transitions = self.jira_service.jira.transitions(issue)
+                            for t in transitions:
+                                if t['to']['name'].lower() == update['fields']['status'].lower():
+                                    self.jira_service.jira.transition_issue(issue, t['id'])
+                                    break
+                        
+                        # End date update
+                        if 'end_date' in update['fields']:
+                            update_dict[self.jira_service.end_date_field] = update['fields']['end_date']
+                        
+                        # Estimate update
+                        if 'estimate' in update['fields']:
+                            update_dict['timetracking'] = {
+                                'originalEstimate': update['fields']['estimate'],
+                                'remainingEstimate': update['fields']['estimate']
+                            }
+                        
+                        # Assignee update
+                        if 'assignee' in update['fields']:
+                            assignee_info = get_user_mappings().get(update['fields']['assignee'])
+                            if assignee_info:
+                                update_dict['assignee'] = {'name': assignee_info['jira_username']}
+                        
+                        # Apply updates if any
+                        if update_dict:
+                            issue.update(fields=update_dict)
+                        
+                        updated_tasks.append({
+                            'key': issue.key,
+                            'url': f"{JIRA_URL}/browse/{issue.key}",
+                            'summary': issue.fields.summary,
+                            'changes': list(update['fields'].keys()),
+                            'reason': update['reason']
+                        })
+                    
+                except Exception as e:
+                    print(f"Error updating task {update['key']}: {e}")
+                    continue
+        
+        # Format response
+        response = f"{analysis['response']}\n\n"
+        
+        if created_tasks:
+            response += "### Created Tasks:\n"
+            for task in created_tasks:
+                response += f"- [{task['key']}]({task['url']}): {task['title']} (Assigned to @{task['assignee']})\n"
+                if task['type'] == 'story' and task['sub_tasks']:
+                    response += "  Sub-tasks:\n"
+                    for sub_task in task['sub_tasks']:
+                        response += f"  - [{sub_task['key']}]({sub_task['url']}): {sub_task['title']} (Assigned to @{sub_task['assignee']})\n"
+        
+        if updated_tasks:
+            response += "\n### Task Updates:\n"
+            for task in updated_tasks:
+                if task.get('action') == 'converted_to_story':
+                    response += f"- Converted task {task['original_key']} to story [{task['key']}]({task['url']})\n"
+                    response += f"  • Created sub-tasks:\n"
+                    for sub_task in task['sub_tasks']:
+                        response += f"    - [{sub_task['key']}]({sub_task['url']}): {sub_task['title']} (Assigned to @{sub_task['assignee']})\n"
+                    response += f"  • Reason: {task['reason']}\n"
+                else:
+                    changes = ", ".join(task['changes'])
+                    response += f"- [{task['key']}]({task['url']}): {task['summary']}\n"
+                    response += f"  • Updated fields: {changes}\n"
+                    response += f"  • Reason: {task['reason']}\n"
+        
+        if analysis.get('reasoning'):
+            response += "\n------------------------\n *Reasoning:*\n"
+            for aspect, explanation in analysis['reasoning'].items():
+                response += f"- {aspect.replace('_', ' ').title()}: {explanation}\n"
+        
+        return response, created_tasks, updated_tasks
+
+    async def _handle_dm(self, post):
+        """Handle direct messages to the bot."""
+        try:
+            user_id = post.get('user_id')
+            message = post.get('message', '').strip()
+            
+            if not message:
+                return
+            
+            # Get user's username
+            user = self.driver.users.get_user(user_id)
+            username = user['username']
+            
+            print(f"\n=== Handling DM from {username} ===")
+            print(f"Message: {message}")
+            
+            # Get user's active tasks from all projects
+            user_tasks = []
+            for channel_id, channel_info in self.channels.items():
+                jira_project = channel_info.get('jira_project')
+                if jira_project:
+                    user_info = get_user_mappings().get(username, {})
+                    jira_username = user_info.get('jira_username', username)
+                    tasks = self.jira_service.get_user_active_tasks(jira_username, jira_project)
+                    user_tasks.extend(tasks)
+            
+            # Sort tasks by last updated
+            user_tasks.sort(key=lambda x: x.get('updated', datetime.min), reverse=True)
+            user_tasks = user_tasks[:100]  # Limit to 100 most recent tasks
+            
+            # Get recent messages from all channels
+            recent_messages = self._get_user_all_channels_messages(username)
+            
+            # Get channel members for context
+            channel_members = {}
+            for channel_id, channel_info in self.channels.items():
+                if username in channel_info.get('members', []):
+                    for member in channel_info.get('members', []):
+                        if member not in get_excluded_users() and member != BOT_USERNAME:
+                            channel_members[member] = get_user_mappings().get(member, {})
+            
+            # Format tasks for analysis
+            formatted_tasks = []
+            for task in user_tasks:
+                formatted_task = {
+                    'key': task.get('key', ''),
+                    'summary': task.get('summary', ''),
+                    'status': task.get('status', ''),
+                    'end_date': task.get('end_date'),
+                    'start_date': task.get('start_date'),
+                    'assignee': task.get('assignee', ''),
+                    'assignee_display_name': task.get('assignee_display_name', ''),
+                    'url': task.get('url', ''),
+                    'original_estimate': task.get('original_estimate', ''),
+                    'updated': task.get('updated', datetime.min)
+                }
+                formatted_tasks.append(formatted_task)
+            
+            # Analyze the message with full context
+            analysis = self.message_analyzer.analyze_question(
+                question=message,
+                prior_messages=recent_messages,
+                active_tasks=formatted_tasks,
+                channel_members=channel_members
+            )
+            
+            # Handle task actions if needed
+            if analysis.get('needs_action'):
+                # Get the project code from the user's most recent task
+                project_code = None
+                if user_tasks:
+                    project_code = user_tasks[0]['key'].split('-')[0]
+                
+                if project_code:
+                    response, _, _ = await self._handle_task_actions(analysis, project_code)
+                else:
+                    response = analysis['response']
+            else:
+                response = analysis['response']
+            
+            # Send response
+            await self._send_dm(user_id, response)
+            
+        except Exception as e:
+            print(f"Error handling DM: {e}")
+            print(f"Full error: {traceback.format_exc()}")
+            await self._send_dm(user_id, "I encountered an error processing your message. Please try again.")
+
+    async def _send_dm(self, user_id: str, message: str):
+        """Send a direct message to a user."""
+        try:
+            # Create DM channel first
+            dm_channel = self.driver.channels.create_direct_message_channel([self.bot_id, user_id])
+            
+            # Send message to the DM channel
+            result = self.driver.posts.create_post({
+                'channel_id': dm_channel['id'],
+                'message': message
+            })
+            
+            if result:
+                print(f"Successfully sent DM to user {user_id}")
+            else:
+                print(f"Failed to send DM to user {user_id}")
+                
+        except Exception as e:
+            print(f"Error sending DM: {e}")
+            print(f"Full error: {traceback.format_exc()}")
+
+    def _get_user_all_channels_messages(self, username: str) -> List[str]:
+        """Get recent messages from all channels the user is in."""
+        print(f"\n=== Getting Recent Messages from All Channels for {username} ===")
+        
+        try:
+            # Get all channels the user is in
+            user_channels = []
+            for channel_id, channel_info in self.channels.items():
+                if username in channel_info.get('members', []):
+                    user_channels.append(channel_id)
+            
+            if not user_channels:
+                print(f"No channels found for user {username}")
+                return []
+            
+            print(f"Found {len(user_channels)} channels for user {username}")
+            
+            # Get recent messages from each channel
+            all_messages = []
+            for channel_id in user_channels:
+                try:
+                    # Get channel messages using the correct API method
+                    posts = self.driver.posts.get_posts_for_channel(channel_id)
+                    
+                    if posts and 'posts' in posts:
+                        for post_id, post in posts['posts'].items():
+                            if post.get('user_id') != self.bot_id:  # Skip bot messages
+                                all_messages.append({
+                                    'channel': self.channels[channel_id].get('name', 'Unknown'),
+                                    'username': post.get('user_id', 'Unknown'),
+                                    'message': post.get('message', ''),
+                                    'create_at': post.get('create_at', 0)
+                                })
+                    else:
+                        print(f"No posts found for channel {channel_id}")
+                        
+                except Exception as e:
+                    print(f"Error getting messages for channel {channel_id}: {e}")
+                    continue
+            
+            # Sort messages by create_at and format them
+            all_messages.sort(key=lambda x: x['create_at'], reverse=True)
+            formatted_messages = [
+                f"[{msg['channel']}] @{msg['username']}: {msg['message']}"
+                for msg in all_messages[:100]  # Limit to 100 most recent messages
+            ]
+            
+            print(f"Found {len(formatted_messages)} recent messages across all channels")
+            return formatted_messages
+            
+        except Exception as e:
+            print(f"Error getting all channel messages: {e}")
+            print(f"Full error: {traceback.format_exc()}")
+            return []
 
     def _handle_report_reply(self, post):
         try:
@@ -596,87 +1108,75 @@ class ScrumBot:
             print(f"\nGetting tasks for channel {channel_name} (Jira: {jira_project})")
 
             if jira_project and self.jira_service.enabled:
-                # Calculate start of yesterday in milliseconds
-                yesterday_start = int(
-                    (datetime.now(TIMEZONE) - timedelta(days=1))
-                    .replace(hour=0, minute=0, second=0, microsecond=0)
-                    .timestamp() * 1000
-                )
-                
-                # Get posts since yesterday
-                posts = self.driver.posts.get_posts_for_channel(channel_id)
-                recent_messages = []
-                
-                # Sort posts by creation time and filter for yesterday and today
-                sorted_posts = sorted(
-                    [
-                        post for post in posts['posts'].values()
-                        if post['create_at'] >= yesterday_start
-                    ],
-                    key=lambda x: x['create_at']
-                )
-                
-                # Group messages by day for better context
-                yesterday_messages = []
-                today_messages = []
-                today_start = int(
-                    datetime.now(TIMEZONE)
-                    .replace(hour=0, minute=0, second=0, microsecond=0)
-                    .timestamp() * 1000
-                )
-                
-                for post in sorted_posts:
-                    user = self.driver.users.get_user(post['user_id'])['username']
-                    message = f"@{user}: {post['message']}"
-                    
-                    if post['create_at'] < today_start:
-                        yesterday_messages.append(message)
-                    else:
-                        today_messages.append(message)
-                
-                # Format messages with day headers
-                if yesterday_messages:
-                    recent_messages.append("=== Yesterday's Discussions ===")
-                    recent_messages.extend(yesterday_messages)
-                if today_messages:
-                    if recent_messages:  # Add a separator if we have yesterday's messages
-                        recent_messages.append("\n")
-                    recent_messages.append("=== Today's Discussions ===")
-                    recent_messages.extend(today_messages)
+                # First validate and update sprint tasks
+                channel_members = {
+                    member: get_user_mappings().get(member, {}).get('jira_username', member)
+                    for member in self.channels[channel_id].get('members', [])
+                    if member not in get_excluded_users() and member != BOT_USERNAME
+                }
+                validation_result = self.jira_service.validate_and_update_sprint_tasks(jira_project, channel_members)
+                if validation_result.get('updated', 0) > 0:
+                    print(f"Updated {validation_result['updated']} tasks with missing fields")
+                    for task in validation_result.get('tasks', []):
+                        print(f"- {task['key']}: Updated {', '.join(task['updated_fields'])}")
 
-                # Get task suggestions for each member
-                user_mappings = get_user_mappings()
-                suggestions = self.jira_service.generate_task_suggestions(
-                    project_code=jira_project,
-                    channel_members=user_mappings,
-                    recent_messages=recent_messages
+                # Get all active tasks for the project
+                jql = (
+                    f"project = '{jira_project}' "
+                    f"AND status IN ('To Do', 'In Progress') "
+                    f"AND sprint IN openSprints()"
                 )
+                all_tasks = self.jira_service.jira.search_issues(jql)
                 
-                print(f"Suggestions: {suggestions}")
+                # Group tasks by assignee
+                tasks_by_assignee = {}
+                for issue in all_tasks:
+                    if issue.fields.assignee:
+                        assignee = issue.fields.assignee.name
+                        if assignee not in tasks_by_assignee:
+                            tasks_by_assignee[assignee] = []
+                        tasks_by_assignee[assignee].append(issue)
 
                 for member in self.channels[channel_id].get('members', []):
                     if member in get_excluded_users() or member == BOT_USERNAME:
                         continue
 
                     # Get user's Jira mapping
-                    user_info = user_mappings.get(member, {})
+                    user_info = get_user_mappings().get(member, {})
                     jira_username = user_info.get('jira_username', member)
                     
-                    # Get active tasks
-                    tasks = self.jira_service.get_user_active_tasks(jira_username, jira_project)
+                    # Get user's tasks
+                    user_tasks = tasks_by_assignee.get(jira_username, [])
                     
-                    # Sort tasks by end date and status
-                    todo_tasks = [t for t in tasks if t['status'] == 'To Do']
-                    in_progress_tasks = [t for t in tasks if t['status'] == 'In Progress']
+                    # Sort tasks by status and end date
+                    in_progress_tasks = []
+                    todo_tasks = []
                     
-                    # Sort by end date if available
-                    for task_list in [todo_tasks, in_progress_tasks]:
+                    for task in user_tasks:
+                        task_info = {
+                            'key': task.key,
+                            'summary': task.fields.summary,
+                            'status': task.fields.status.name,
+                            'end_date': datetime.strptime(getattr(task.fields, self.jira_service.end_date_field, None), '%Y-%m-%d') if getattr(task.fields, self.jira_service.end_date_field, None) else None,
+                            'start_date': datetime.strptime(getattr(task.fields, self.jira_service.start_date_field, None), '%Y-%m-%d') if getattr(task.fields, self.jira_service.start_date_field, None) else None,
+                            'priority': task.fields.priority.name if task.fields.priority else 'Medium',
+                            'url': f"{JIRA_URL}/browse/{task.key}"
+                        }
+                        
+                        if task.fields.status.name == 'In Progress':
+                            in_progress_tasks.append(task_info)
+                        else:
+                            todo_tasks.append(task_info)
+
+                    # Sort tasks by end date and priority
+                    for task_list in [in_progress_tasks, todo_tasks]:
                         task_list.sort(key=lambda x: (
                             x['end_date'] if x['end_date'] else datetime.max,
+                            x['priority'] if x['priority'] else 'Medium',
                             x['key']
                         ))
 
-                    if tasks:  # Only tag users with active tasks
+                    if user_tasks:  # Only tag users with active tasks
                         tagged_users.append(member)
                         user_mention = f"@{member}"
                         task_mentions = []
@@ -689,7 +1189,7 @@ class ScrumBot:
                             user_section.append("\n#### 📋 Please Update Tasks:")
                             
                             # Add in-progress tasks first
-                            for task in in_progress_tasks[:2]:  # Max 2 tasks
+                            for task in in_progress_tasks[:3]:  # Increased from 2 to 3 tasks
                                 urgent = ""
                                 if task['end_date']:
                                     if task['end_date'].date() <= (datetime.now(TIMEZONE) + timedelta(days=1)).date():
@@ -699,28 +1199,77 @@ class ScrumBot:
                                     f"({task['status']}) {urgent}"
                                 )
                             
-                            # Add to-do tasks
-                            remaining_slots = 2 - len(task_mentions)
-                            for task in todo_tasks[:remaining_slots]:
-                                urgent = ""
-                                if task['end_date']:
-                                    if task['end_date'].date() <= (datetime.now(TIMEZONE) + timedelta(days=1)).date():
-                                        urgent = "🚨 **URGENT**"
-                                task_mentions.append(
-                                    f"- [{task['key']}]({task['url']}): {task['summary']} "
-                                    f"({task['status']}) {urgent}"
-                                )
+                            # Add to-do tasks based on logic
+                            remaining_slots = 3 - len(task_mentions)  # Increased from 2 to 3
+                            if remaining_slots > 0:
+                                # First, add tasks close to deadline
+                                for task in todo_tasks:
+                                    if remaining_slots <= 0:
+                                        break
+                                    if task['end_date'] and task['end_date'].date() <= (datetime.now(TIMEZONE) + timedelta(days=4)).date():
+                                        urgent = "🚨 **URGENT**" if task['end_date'].date() <= (datetime.now(TIMEZONE) + timedelta(days=1)).date() else ""
+                                        task_mentions.append(
+                                            f"- [{task['key']}]({task['url']}): {task['summary']} "
+                                            f"({task['status']}) {urgent}"
+                                        )
+                                        remaining_slots -= 1
+                                
+                                # Then, add tasks that started recently but still in To Do
+                                if remaining_slots > 0:
+                                    for task in todo_tasks:
+                                        if remaining_slots <= 0:
+                                            break
+                                        if task['start_date'] and task['start_date'].date() >= (datetime.now(TIMEZONE) - timedelta(days=2)).date():
+                                            task_mentions.append(
+                                                f"- [{task['key']}]({task['url']}): {task['summary']} "
+                                                f"({task['status']})"
+                                            )
+                                            remaining_slots -= 1
                             
                             if task_mentions:
                                 user_section.extend(task_mentions)
                             
-                        # Add AI suggestion if available
-                        if member in suggestions:
-                            user_section.extend([
-                                "\n#### 💡 Today's Focus Suggestion:",
-                                suggestions[member]
-                            ])
-                            
+                        # Add focus suggestion based on task count and status
+                        user_section.extend([
+                            "\n#### 💡 Today's Focus:",
+                        ])
+                        
+                        if len(in_progress_tasks) == 0:
+                            user_section.append("You don't have any tasks in progress. Please pick up tasks from your To Do list, prioritizing those with upcoming deadlines.")
+                            # Add recommended tasks from todo list
+                            if todo_tasks:
+                                user_section.append("\nRecommended tasks to pick up:")
+                                for task in todo_tasks[:3]:  # Show top 3 recommended tasks
+                                    urgent = "🚨 **URGENT**" if task['end_date'] and task['end_date'].date() <= (datetime.now(TIMEZONE) + timedelta(days=1)).date() else ""
+                                    user_section.append(f"- [{task['key']}]({task['url']}): {task['summary']} {urgent}")
+                        elif len(in_progress_tasks) == 1:
+                            user_section.append("You have 1 task in progress. Consider picking up additional tasks from your To Do list, especially those with upcoming deadlines.")
+                            # Add recommended tasks from todo list
+                            if todo_tasks:
+                                user_section.append("\nRecommended tasks to pick up:")
+                                for task in todo_tasks[:2]:  # Show top 2 recommended tasks
+                                    urgent = "🚨 **URGENT**" if task['end_date'] and task['end_date'].date() <= (datetime.now(TIMEZONE) + timedelta(days=1)).date() else ""
+                                    user_section.append(f"- [{task['key']}]({task['url']}): {task['summary']} {urgent}")
+                        elif len(in_progress_tasks) == 2:
+                            user_section.append("You have 2 tasks in progress. You can take on one more task if needed.")
+                            # Add recommended tasks from todo list
+                            if todo_tasks:
+                                user_section.append("\nRecommended tasks to pick up:")
+                                for task in todo_tasks[:1]:  # Show top 1 recommended task
+                                    urgent = "🚨 **URGENT**" if task['end_date'] and task['end_date'].date() <= (datetime.now(TIMEZONE) + timedelta(days=1)).date() else ""
+                                    user_section.append(f"- [{task['key']}]({task['url']}): {task['summary']} {urgent}")
+                        else:
+                            urgent_tasks = [t for t in in_progress_tasks if t['end_date'] and t['end_date'].date() <= (datetime.now(TIMEZONE) + timedelta(days=1)).date()]
+                            if urgent_tasks:
+                                user_section.append(f"You have {len(in_progress_tasks)} tasks in progress. Focus on completing the urgent tasks first:")
+                                for task in urgent_tasks:
+                                    user_section.append(f"- [{task['key']}]({task['url']}): {task['summary']} 🚨 **URGENT**")
+                            else:
+                                user_section.append(f"You have {len(in_progress_tasks)} tasks in progress. Focus on completing tasks in order of priority and deadline:")
+                                # Show top 2 in-progress tasks to focus on
+                                for task in in_progress_tasks[:2]:
+                                    user_section.append(f"- [{task['key']}]({task['url']}): {task['summary']}")
+                        
                         user_task_mentions.append("\n".join(user_section))
 
             # Construct the final message
@@ -733,7 +1282,6 @@ class ScrumBot:
             
             if user_task_mentions:
                 message += "\n".join(user_task_mentions) + "\n\n"
-            
             
             print(f"Daily Task Suggest Message: {message}")
             
@@ -907,7 +1455,7 @@ class ScrumBot:
             print(f"Error sending task reminder to {username}: {e}")
             print(f"Full error: {traceback.format_exc()}")
 
-    def _handle_bot_mention(self, post_data):
+    async def _handle_bot_mention(self, post_data):
         try:
             # Get the root_id - if this is a thread reply, use the parent thread's id
             root_id = post_data.get('root_id') or post_data.get('id')
@@ -977,255 +1525,28 @@ class ScrumBot:
             )
             
             if analysis['needs_action']:
-                created_tasks = []
-                updated_tasks = []
+                response, created_tasks, updated_tasks = await self._handle_task_actions(analysis, project_code)
                 
-                if analysis['action_type'] == 'create':
-                    # Get the active sprint ID first
-                    boards = self.jira_service.jira.boards(projectKeyOrID=project_code)
-                    sprint_id = None
-                    for board in boards:
-                        sprints = self.jira_service.jira.sprints(board.id, state='active')
-                        if sprints:
-                            sprint_id = sprints[0].id
-                            break
-                    
-                    # Create new tasks
-                    for task in analysis['tasks']:
-                        try:
-                            # Get assignee's Jira username
-                            assignee_info = get_user_mappings().get(task['assignee'])
-                            if not assignee_info:
-                                continue
-                                
-                            # Determine if this is a story or regular task
-                            is_story = task['type'] == 'story'
-                            
-                            # Create issue in Jira
-                            issue_dict = {
-                                'project': {'key': project_code},
-                                'summary': task['title'],
-                                'description': task['description'],
-                                'issuetype': {'name': 'Story' if is_story else 'Task'},
-                                'assignee': {'name': assignee_info['jira_username']},
-                                self.jira_service.start_date_field: task['start_date'],
-                                self.jira_service.end_date_field: task['end_date'],
-                                'timetracking': {
-                                    'originalEstimate': task['estimate'],
-                                    'remainingEstimate': task['estimate']
-                                }
-                            }
-                            
-                            new_issue = self.jira_service.jira.create_issue(fields=issue_dict)
-                            
-                            # Add the issue to the active sprint
-                            if sprint_id:
-                                self.jira_service.jira.add_issues_to_sprint(sprint_id, [new_issue.key])
-                            
-                            created_task = {
-                                'key': new_issue.key,
-                                'url': f"{JIRA_URL}/browse/{new_issue.key}",
-                                'assignee': task['assignee'],
-                                'title': task['title'],
-                                'type': task['type'],
-                                'sub_tasks': []
-                            }
-                            
-                            # If this is a story, create sub-tasks
-                            if is_story and 'sub_tasks' in task:
-                                for sub_task in task['sub_tasks']:
-                                    # Get sub-task assignee's Jira username
-                                    sub_assignee_info = get_user_mappings().get(sub_task['assignee'])
-                                    if not sub_assignee_info:
-                                        continue
-                                        
-                                    # Create sub-task
-                                    sub_task_dict = {
-                                        'project': {'key': project_code},
-                                        'summary': sub_task['title'],
-                                        'description': sub_task['description'],
-                                        'issuetype': {'name': 'Sub-task'},
-                                        'parent': {'key': new_issue.key},
-                                        'assignee': {'name': sub_assignee_info['jira_username']},
-                                        self.jira_service.start_date_field: sub_task['start_date'],
-                                        self.jira_service.end_date_field: sub_task['end_date'],
-                                        'timetracking': {
-                                            'originalEstimate': sub_task['estimate'],
-                                            'remainingEstimate': sub_task['estimate']
-                                        }
-                                    }
-                                    
-                                    new_sub_task = self.jira_service.jira.create_issue(fields=sub_task_dict)
-                                    
-                                    # Add sub-task to sprint
-                                    if sprint_id:
-                                        self.jira_service.jira.add_issues_to_sprint(sprint_id, [new_sub_task.key])
-                                    
-                                    created_task['sub_tasks'].append({
-                                        'key': new_sub_task.key,
-                                        'url': f"{JIRA_URL}/browse/{new_sub_task.key}",
-                                        'assignee': sub_task['assignee'],
-                                        'title': sub_task['title']
-                                    })
-                            
-                            created_tasks.append(created_task)
-                            
-                        except Exception as e:
-                            print(f"Error creating task: {e}")
-                            continue
-                    
-                elif analysis['action_type'] == 'update':
-                    # Handle task updates
-                    for update in analysis['updates']:
-                        try:
-                            if update['action'] == 'convert_to_story':
-                                # Get the original task
-                                original_task = self.jira_service.jira.issue(update['key'])
-                                
-                                # Create new story
-                                story_dict = {
-                                    'project': {'key': project_code},
-                                    'summary': original_task.fields.summary,
-                                    'description': original_task.fields.description,
-                                    'issuetype': {'name': 'Story'},
-                                    'assignee': {'name': original_task.fields.assignee.name},
-                                    self.jira_service.start_date_field: getattr(original_task.fields, self.jira_service.start_date_field, None),
-                                    self.jira_service.end_date_field: getattr(original_task.fields, self.jira_service.end_date_field, None)
-                                }
-                                
-                                new_story = self.jira_service.jira.create_issue(fields=story_dict)
-                                
-                                # Create sub-tasks
-                                created_sub_tasks = []
-                                for sub_task in update['sub_tasks']:
-                                    # Get sub-task assignee's Jira username
-                                    sub_assignee_info = get_user_mappings().get(sub_task['assignee'])
-                                    if not sub_assignee_info:
-                                        continue
-                                        
-                                    # Create sub-task
-                                    sub_task_dict = {
-                                        'project': {'key': project_code},
-                                        'summary': sub_task['title'],
-                                        'description': sub_task['description'],
-                                        'issuetype': {'name': 'Sub-task'},
-                                        'parent': {'key': new_story.key},
-                                        'assignee': {'name': sub_assignee_info['jira_username']},
-                                        self.jira_service.start_date_field: sub_task['start_date'],
-                                        self.jira_service.end_date_field: sub_task['end_date'],
-                                        'timetracking': {
-                                            'originalEstimate': sub_task['estimate'],
-                                            'remainingEstimate': sub_task['estimate']
-                                        }
-                                    }
-                                    
-                                    new_sub_task = self.jira_service.jira.create_issue(fields=sub_task_dict)
-                                    created_sub_tasks.append({
-                                        'key': new_sub_task.key,
-                                        'url': f"{JIRA_URL}/browse/{new_sub_task.key}",
-                                        'assignee': sub_task['assignee'],
-                                        'title': sub_task['title']
-                                    })
-                                
-                                # Delete the original task
-                                original_task.delete()
-                                
-                                updated_tasks.append({
-                                    'key': new_story.key,
-                                    'url': f"{JIRA_URL}/browse/{new_story.key}",
-                                    'summary': original_task.fields.summary,
-                                    'action': 'converted_to_story',
-                                    'original_key': update['key'],
-                                    'sub_tasks': created_sub_tasks,
-                                    'reason': update['reason']
-                                })
-                                
-                            else:  # Regular update
-                                issue = self.jira_service.jira.issue(update['key'])
-                                update_dict = {}
-                                
-                                # Status update
-                                if 'status' in update['fields']:
-                                    # Get transition ID for the desired status
-                                    transitions = self.jira_service.jira.transitions(issue)
-                                    for t in transitions:
-                                        if t['to']['name'].lower() == update['fields']['status'].lower():
-                                            self.jira_service.jira.transition_issue(issue, t['id'])
-                                            break
-                                
-                                # End date update
-                                if 'end_date' in update['fields']:
-                                    update_dict[self.jira_service.end_date_field] = update['fields']['end_date']
-                                
-                                # Estimate update
-                                if 'estimate' in update['fields']:
-                                    update_dict['timetracking'] = {
-                                        'originalEstimate': update['fields']['estimate'],
-                                        'remainingEstimate': update['fields']['estimate']
-                                    }
-                                
-                                # Assignee update
-                                if 'assignee' in update['fields']:
-                                    assignee_info = get_user_mappings().get(update['fields']['assignee'])
-                                    if assignee_info:
-                                        update_dict['assignee'] = {'name': assignee_info['jira_username']}
-                                
-                                # Apply updates if any
-                                if update_dict:
-                                    issue.update(fields=update_dict)
-                                
-                                updated_tasks.append({
-                                    'key': issue.key,
-                                    'url': f"{JIRA_URL}/browse/{issue.key}",
-                                    'summary': issue.fields.summary,
-                                    'changes': list(update['fields'].keys()),
-                                    'reason': update['reason']
-                                })
-                            
-                        except Exception as e:
-                            print(f"Error updating task {update['key']}: {e}")
-                            continue
+                # Send response
+                self.driver.posts.create_post({
+                    'channel_id': channel_id,
+                    'message': response,
+                    'root_id': root_id
+                })
                 
-                # Format response with created and updated tasks
-                response = f"{analysis['response']}\n\n"
+                print(f"Response sent to channel {channel_name}")
                 
-                if created_tasks:
-                    response += "### Created Tasks:\n"
-                    for task in created_tasks:
-                        response += f"- [{task['key']}]({task['url']}): {task['title']} (Assigned to @{task['assignee']})\n"
-                        if task['type'] == 'story' and task['sub_tasks']:
-                            response += "  Sub-tasks:\n"
-                            for sub_task in task['sub_tasks']:
-                                response += f"  - [{sub_task['key']}]({sub_task['url']}): {sub_task['title']} (Assigned to @{sub_task['assignee']})\n"
-                
-                if updated_tasks:
-                    response += "\n### Task Updates:\n"
-                    for task in updated_tasks:
-                        if task.get('action') == 'converted_to_story':
-                            response += f"- Converted task {task['original_key']} to story [{task['key']}]({task['url']})\n"
-                            response += f"  • Created sub-tasks:\n"
-                            for sub_task in task['sub_tasks']:
-                                response += f"    - [{sub_task['key']}]({sub_task['url']}): {sub_task['title']} (Assigned to @{sub_task['assignee']})\n"
-                            response += f"  • Reason: {task['reason']}\n"
-                        else:
-                            changes = ", ".join(task['changes'])
-                            response += f"- [{task['key']}]({task['url']}): {task['summary']}\n"
-                            response += f"  • Updated fields: {changes}\n"
-                            response += f"  • Reason: {task['reason']}\n"
-                
-                if analysis.get('reasoning'):
-                    response += "\n## Reasoning:\n"
-                    for aspect, explanation in analysis['reasoning'].items():
-                        response += f"- {aspect.replace('_', ' ').title()}: {explanation}\n"
             else:
                 response = analysis['response']
-            
-            # Send response
-            self.driver.posts.create_post({
-                'channel_id': channel_id,
-                'message': response,
-                'root_id': root_id
-            })
+                
+                # Send response
+                self.driver.posts.create_post({
+                    'channel_id': channel_id,
+                    'message': response,
+                    'root_id': root_id
+                })
+                
+                print(f"Response sent to channel {channel_name}")
             
         except Exception as e:
             print(f"Error handling bot mention: {str(e)}")
