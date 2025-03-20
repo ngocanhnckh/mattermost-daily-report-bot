@@ -481,8 +481,10 @@ class JiraService(AIValidator):
                             if 'Original Estimate' in task['missing_fields']:
                                 estimate = update['updates'].get('timeoriginalestimate')
                                 if estimate and isinstance(estimate, str) and estimate.endswith('h'):
-                                    update_dict['timeoriginalestimate'] = estimate
-                                    update_dict['timeestimate'] = estimate  # Also set remaining estimate
+                                    update_dict['timetracking'] = {
+                                        'originalEstimate': estimate,
+                                        'remainingEstimate': estimate
+                                    }
                             break
                     
                     if update_dict:
