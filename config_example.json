@@ -34,5 +34,12 @@
     "jira": {
         "url": "https://jira.example.com",
         "token": "MTQzMzMafgsdfgsdfsfdgfdgKAI1R0jIV"
+    },
+    "twilio": {
+        "enabled": false,
+        "account_sid": "your_twilio_account_sid",
+        "auth_token": "your_twilio_auth_token",
+        "from_number": "+1234567890",
+        "sms_template": "Hey {username}! Don't forget to submit your daily report in {channel_name}. Reply to the thread: {thread_link}"
     }
 } 

@@ -57,8 +57,8 @@ def update_user(username):
         config['users'][username] = data
         
         # Save to file
-        with open('config.json', 'w') as f:
-            json.dump(config, f, indent=4)
+        with open('config.json', 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
             
         return jsonify({'success': True})
     except Exception as e:
@@ -77,8 +77,8 @@ def update_channel(name):
         config['channels'][name] = data
         
         # Save to file
-        with open('config.json', 'w') as f:
-            json.dump(config, f, indent=4)
+        with open('config.json', 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
             
         return jsonify({'success': True})
     except Exception as e:
@@ -95,8 +95,8 @@ def delete_user(username):
             del config['users'][username]
             
             # Save to file
-            with open('config.json', 'w') as f:
-                json.dump(config, f, indent=4)
+            with open('config.json', 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=4, ensure_ascii=False)
                 
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'User not found'}), 404
@@ -114,8 +114,8 @@ def delete_channel(name):
             del config['channels'][name]
             
             # Save to file
-            with open('config.json', 'w') as f:
-                json.dump(config, f, indent=4)
+            with open('config.json', 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=4, ensure_ascii=False)
                 
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'Channel not found'}), 404
@@ -200,8 +200,8 @@ def add_excluded_user():
             config['excluded_users'].append(username)
             
             # Save to file
-            with open('config.json', 'w') as f:
-                json.dump(config, f, indent=4)
+            with open('config.json', 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=4, ensure_ascii=False)
                 
             return jsonify({'success': True})
         else:
@@ -221,8 +221,8 @@ def delete_excluded_user(username):
             config['excluded_users'].remove(username)
             
             # Save to file
-            with open('config.json', 'w') as f:
-                json.dump(config, f, indent=4)
+            with open('config.json', 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=4, ensure_ascii=False)
                 
             return jsonify({'success': True})
         else:
@@ -250,8 +250,8 @@ def update_twilio_config():
         config['twilio'].update(data)
         
         # Save to file
-        with open('config.json', 'w') as f:
-            json.dump(config, f, indent=4)
+        with open('config.json', 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
             
         return jsonify({'success': True})
     except Exception as e:

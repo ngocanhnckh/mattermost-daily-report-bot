@@ -19,6 +19,11 @@ A Mattermost bot that helps teams manage daily scrum reports by sending reminder
   - Provides friendly, context-aware feedback to users
   - Flexible validation rules (allows "none" or "nothing" with explanation)
   - Uses GenZ-friendly communication style
+- SMS Reminders via Twilio (Optional):
+  - Sends SMS reminders to users who haven't submitted reports
+  - Customizable SMS message template
+  - Supports phone numbers for each user
+  - Configurable through web interface
 
 ## Setup
 
@@ -40,6 +45,10 @@ A Mattermost bot that helps teams manage daily scrum reports by sending reminder
    OPENROUTER_API_KEY=your_openrouter_api_key
    SITE_URL=your_site_url
    SITE_NAME=your_site_name
+   # Twilio Settings (Optional)
+   TWILIO_ACCOUNT_SID=your_twilio_account_sid
+   TWILIO_AUTH_TOKEN=your_twilio_auth_token
+   TWILIO_FROM_NUMBER=your_twilio_phone_number
    ```
 
 4. Create a `config.json` file:
@@ -61,7 +70,7 @@ A Mattermost bot that helps teams manage daily scrum reports by sending reminder
          "users": {
              "mattermost_username": {
                  "jira_username": "jira.username",
-                 "phone": "+1234567890",
+                 "phone": "+1234567890",  // Required for SMS reminders
                  "bio": "Frontend Developer"
              }
          },
@@ -73,6 +82,13 @@ A Mattermost bot that helps teams manage daily scrum reports by sending reminder
          "jira": {
              "url": "your_jira_instance_url",
              "token": "your_jira_api_token"
+         },
+         "twilio": {
+             "enabled": true,
+             "account_sid": "your_twilio_account_sid",
+             "auth_token": "your_twilio_auth_token",
+             "from_number": "+1234567890",
+             "sms_template": "Hey {username}! Don't forget to submit your daily report in {channel_name}. Reply to the thread: {thread_link}"
          }
      }
      ```
@@ -92,6 +108,7 @@ The bot includes a web interface for managing configurations and viewing reports
   - Manage user mappings (Mattermost to Jira usernames)
   - Configure channel to Jira project mappings
   - Manage excluded users list
+  - Configure Twilio SMS settings
   - All changes are saved automatically to config.json
 
 ### Access
