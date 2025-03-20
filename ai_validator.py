@@ -595,7 +595,7 @@ Important:
 - If just information is needed, make response clear and helpful
 - If tasks are needed, ensure they're well-defined and actionable
 - One jira user should not have more than 3 tasks has the in progress status, or else they can't focus
-- Answer using user's language and style of communication (user question: "{question}")"""
+- Answer using user's language and style of communication and aware username when they are asking what they should do to get the correct task belongs to them (user orignal message (with username): "{question}")"""
 
                 # Get main analysis
                 completion = self.client.chat.completions.create(
