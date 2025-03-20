@@ -64,9 +64,19 @@ class JiraService(AIValidator):
             return []
             
         try:
+            # Validate project code
+            if not project_code or project_code.isspace():
+                print(f"Invalid project code: '{project_code}', skipping")
+                return []
+                
+            # Validate username
+            if not jira_username or jira_username.isspace():
+                print(f"Invalid username: '{jira_username}', skipping")
+                return []
+            
             jql = (
-                f"project = {project_code} "
-                f"AND assignee = {jira_username} "
+                f"project = '{project_code}' "  # Add quotes around project code
+                f"AND assignee = '{jira_username}' "  # Add quotes around username
                 f"AND status IN ('To Do', 'In Progress') "
                 f"AND sprint IN openSprints()"
             )
@@ -861,6 +871,7 @@ Consider:
 6. Yesterday's progress and today's context from discussions
 7. Dependencies between team members' tasks
 8. Any blockers or challenges mentioned in discussions
+9. Tasks already in progress or task in to-do but close to the deadline
 
 Return a clear, friendly, concise suggestion with bullet points in the user's native language (based on recent messages).
 Focus on:

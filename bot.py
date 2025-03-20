@@ -9,7 +9,7 @@ import traceback
 from config import (
     MATTERMOST_URL, BOT_TOKEN, BOT_USERNAME,
     REPORT_TIME, REMINDER_INTERVAL, get_excluded_users,
-    DAILY_REPORT_MESSAGE, REMINDER_MESSAGE, TIMEZONE,
+    DAILY_REPORT_MESSAGE, TIMEZONE,
     AI_VALIDATION_ENABLED, OPENROUTER_API_KEY, SITE_URL, SITE_NAME,
     TEAM_NAME, REPORT_DEADLINE_TIME, get_user_mappings, get_channel_mappings,
     REMIND_TASK_MESSAGE, JIRA_URL
@@ -20,6 +20,7 @@ import json
 import asyncio
 from jira_service import JiraService
 from message_analyzer import MessageAnalyzer
+from twilio_service import TwilioService
 from typing import List, Dict
 
 class ScrumBot:
@@ -61,6 +62,9 @@ class ScrumBot:
             site_name=SITE_NAME,
             enabled=AI_VALIDATION_ENABLED
         )
+
+        # Initialize Twilio service
+        self.twilio_service = TwilioService()
 
     def start(self):
         print("Bot started")
@@ -177,97 +181,94 @@ class ScrumBot:
                 time.sleep(60)
 
     def _check_reminders(self):
-        current_time = datetime.now(TIMEZONE)
-        print("\n=== Checking Reminders ===")
-        print(f"Current time: {current_time}")
-        
-        # Check if it's deadline time
-        deadline_time = datetime.strptime(REPORT_DEADLINE_TIME, "%H:%M").time()
-        is_deadline = current_time.time() >= deadline_time
-        print(f"Deadline time: {deadline_time}")
-        print(f"Is deadline reached? {is_deadline}")
-        
-        for channel_id, report_info in self.daily_report_posts.items():
-            channel_info = self.channels.get(channel_id, {})
-            channel_name = channel_info.get('name', 'Unknown')
+        """Check and send reminders for daily reports."""
+        try:
+            current_time = datetime.now(TIMEZONE)
+            print(f"\n=== Checking Reminders at {current_time} ===")
             
-            # Get Jira project code for this channel
-            jira_project = get_channel_mappings().get(channel_name, {}).get('jira_project')
-            print(f"\nProcessing channel: {channel_name} (Jira: {jira_project})")
+            # Calculate reminder start time based on report time and interval
+            report_hour, report_minute = map(int, REPORT_TIME.split(':'))
+            reminder_interval = float(REMINDER_INTERVAL)
             
-            for member in channel_info.get('members', []):
-                if member in get_excluded_users() or member == BOT_USERNAME:
-                    print(f"Skipping excluded user: {member}")
-                    continue
-                    
-                # Get user's Jira mapping
-                user_info = get_user_mappings().get(member)
-                if not user_info:
-                    print(f"No Jira mapping found for user {member}")
-                    continue
-                    
-                print(f"\nChecking tasks for {member} ({user_info['jira_username']})")
+            # Create report time for today
+            report_time = current_time.replace(hour=report_hour, minute=report_minute, second=0, microsecond=0)
+            
+            # Calculate when reminders should start
+            reminder_start_time = report_time + timedelta(hours=reminder_interval)
+            
+            print(f"Report time: {report_time}")
+            print(f"Reminder interval: {reminder_interval} hours")
+            print(f"Reminder start time: {reminder_start_time}")
+            print(f"Current time: {current_time}")
+            print(f"Time difference: {current_time - reminder_start_time}")
+            
+            # If current time is before reminder start time, skip reminders
+            if current_time < reminder_start_time:
+                print(f"Current time {current_time} is before reminder start time {reminder_start_time}, skipping reminders")
+                return
                 
-                # Get active tasks
-                tasks = self.jira_service.get_user_active_tasks(
-                    user_info['jira_username'],
-                    jira_project
-                )
+            print(f"Current time {current_time} is after reminder start time {reminder_start_time}, proceeding with reminders")
+            
+            # Check each channel
+            for channel_id, channel_info in self.channels.items():
+                channel_name = channel_info.get('name', '')
+                print(f"\nChecking channel: {channel_name}")
                 
-                if is_deadline and not self.db.has_reported_today(channel_id, member):
-                    print(f"Deadline reached for {member}, checking activities...")
+                # Get channel members
+                members = channel_info.get('members', [])
+                print(f"Channel members: {members}")
+                
+                # Get reported users for today
+                reported_users = set(self.db.get_today_reports(channel_id))
+                print(f"Users who have reported: {reported_users}")
+                
+                # Check each member
+                for member in members:
+                    print(f"\nChecking member: {member}")
                     
-                    # Get both messages and Jira updates
-                    messages = self._get_user_recent_messages(channel_id, member)
-                    print(f"Found {len(messages)} recent messages")
+                    # Skip if user has already reported
+                    if member in reported_users:
+                        print(f"User {member} has already reported, skipping")
+                        continue
+                        
+                    # Skip if user is excluded
+                    if member in get_excluded_users():
+                        print(f"User {member} is excluded, skipping")
+                        continue
+                        
+                    # Skip if user is the bot
+                    if member == BOT_USERNAME:
+                        print(f"User {member} is the bot, skipping")
+                        continue
                     
-                    recent_updates = self.jira_service.get_user_recent_updates(
-                        user_info['jira_username'],
-                        jira_project
-                    )
-                    print(f"Found {len(recent_updates)} recent Jira updates")
+                    # Get user's active tasks
+                    tasks = self.jira_service.get_user_active_tasks(member, channel_info.get('jira_project', ''))
+                    print(f"Active tasks for {member}: {tasks}")
                     
-                    # Generate report if we have either messages or Jira updates
-                    if messages or recent_updates:
-                        print("Found activity, generating AI report...")
-                        ai_report = self.message_analyzer.generate_report(
-                            member,
-                            messages,
-                            tasks,
-                            recent_updates
-                        )
-                        if ai_report:
-                            print("AI report generated, sending to channel...")
-                            self._send_ai_generated_report(
-                                channel_id,
-                                member,
-                                ai_report,
-                                self.daily_report_posts[channel_id]['post_id']
-                            )
-                        else:
-                            print("AI report generation failed")
+                    # Only send reminder if user has active tasks
+                    if tasks:
+                        print(f"User {member} has {len(tasks)} active tasks")
+                        # Check if we've already sent a reminder to this user in this interval
+                        if channel_id in self.pending_reminders and member in self.pending_reminders[channel_id]:
+                            last_reminder = self.pending_reminders[channel_id][member]
+                            time_since_last = current_time - last_reminder
+                            print(f"Last reminder sent {time_since_last} ago")
+                            if time_since_last < timedelta(hours=reminder_interval):
+                                print(f"Already sent reminder to {member} {time_since_last} ago, skipping")
+                                continue
+                        
+                        print(f"User {member} has not reported in channel {channel_name}, sending reminder")
+                        self._send_reminder_dm(member)
+                        # Update the last reminder time
+                        if channel_id not in self.pending_reminders:
+                            self.pending_reminders[channel_id] = {}
+                        self.pending_reminders[channel_id][member] = current_time
                     else:
-                        print(f"No recent activity found for {member}, skipping AI report")
-                else:
-                    if not is_deadline:
-                        print(f"Not deadline time yet for {member}")
-                    elif self.db.has_reported_today(channel_id, member):
-                        print(f"{member} has already reported today")
-                
-                if tasks:  # Regular reminder with task context
-                    # Identify urgent tasks (due within 1 day)
-                    urgent_tasks = [
-                        task for task in tasks
-                        if task['end_date'] and 
-                        task['end_date'].date() <= (current_time + timedelta(days=1)).date()
-                    ]
-                    
-                    self._send_task_reminder(
-                        member,
-                        tasks,
-                        urgent_tasks,
-                        channel_id
-                    )
+                        print(f"User {member} has no active tasks, skipping reminder")
+                        
+        except Exception as e:
+            print(f"Error in _check_reminders: {e}")
+            print(traceback.format_exc())
 
     def _get_user_recent_messages(self, channel_id: str, username: str) -> List[str]:
         """Get user's messages from the last 2 days."""
@@ -487,10 +488,27 @@ class ScrumBot:
             self.driver.users.get_user(member['user_id'])['username']
             for member in members
         ]
+        
+        # Get Jira project code from channel mappings
+        channel_mappings = get_channel_mappings()
+        channel_name = channel['name']
+        print(f"Processing channel: {channel_name}")
+        
+        # Try to get project code from channel mappings
+        jira_project = None
+        if channel_name in channel_mappings:
+            jira_project = channel_mappings[channel_name].get('jira_project')
+            print(f"Found Jira project code for channel {channel_name}: {jira_project}")
+        else:
+            print(f"No Jira mapping found for channel {channel_name}")
+            
+        # Store channel info regardless of Jira project code
         self.channels[channel_id] = {
-            'name': channel['name'],
-            'members': member_usernames
+            'name': channel_name,
+            'members': member_usernames,
+            'jira_project': jira_project
         }
+        print(f"Updated channel info for {channel_name} with {len(member_usernames)} members")
 
     def send_daily_report(self):
         try:
@@ -519,12 +537,7 @@ class ScrumBot:
                         continue
                     
                     # Get Jira project code for this channel
-                    channel_mapping = get_channel_mappings().get(channel_name)
-                    if not channel_mapping:
-                        print(f"No Jira mapping found for channel {channel_name}, skipping")
-                        continue
-                        
-                    jira_project = channel_mapping.get('jira_project')
+                    jira_project = channel_info.get('jira_project')
                     if not jira_project:
                         print(f"No Jira project code found for channel {channel_name}, skipping")
                         continue
@@ -663,7 +676,7 @@ class ScrumBot:
                             x['key']
                         ))
 
-                    if tasks or member in suggestions:  # Tag users with tasks or suggestions
+                    if tasks:  # Only tag users with active tasks
                         tagged_users.append(member)
                         user_mention = f"@{member}"
                         task_mentions = []
@@ -754,19 +767,22 @@ class ScrumBot:
                         post_id = report_info['post_id']
                         # Include team name in the thread link
                         thread_link = f"{SITE_URL}/{TEAM_NAME}/pl/{post_id}"
-                        user_pending_channels.append(f"[{channel_name}]({thread_link})")
+                        user_pending_channels.append({
+                            'name': channel_name,
+                            'link': thread_link
+                        })
             
             # Only send reminder if there are pending channels
             if user_pending_channels:
                 # Add date and thread links to the reminder message
                 message = (
-                    f"{REMINDER_MESSAGE}"
+                    f"{REMIND_TASK_MESSAGE}"
                     f"⏰ **Daily Report Reminder for {date_str}**\n\n"
                     f"You still need to submit your daily report in the following channels:\n"
                 )
                 
-                for channel_link in user_pending_channels:
-                    message += f"• {channel_link}\n"
+                for channel in user_pending_channels:
+                    message += f"• [{channel['name']}]({channel['link']})\n"
                 
                 # Send reminder message
                 self.driver.posts.create_post({
@@ -774,11 +790,24 @@ class ScrumBot:
                     'message': message
                 })
                 print(f"Reminder sent to {username} for {len(user_pending_channels)} pending channels")
+
+                # Send SMS reminder if enabled and user has a phone number
+                user_info = get_user_mappings().get(username, {})
+                if user_info.get('phone'):
+                    # Send SMS for each pending channel
+                    for channel in user_pending_channels:
+                        self.twilio_service.send_sms(
+                            to_number=user_info['phone'],
+                            username=username,
+                            channel_name=channel['name'],
+                            thread_link=channel['link']
+                        )
             else:
                 print(f"No pending channels to remind {username} about")
                 
         except Exception as e:
             print(f"Error sending reminder to {username}: {str(e)}")
+            print(f"Full error: {traceback.format_exc()}")
 
     def _send_ai_generated_report(self, channel_id: str, username: str, ai_report: str, root_id: str):
         """Send an AI-generated report as a reply in the daily report thread."""
@@ -860,7 +889,7 @@ class ScrumBot:
             
             # Format the message
             message = (
-                f"{REMINDER_MESSAGE}\n\n"
+                f"{REMIND_TASK_MESSAGE}\n\n"
                 f"Your active tasks:\n"
                 f"{chr(10).join(task_info)}\n\n"
                 f"Please reply in the daily report thread: {SITE_URL}/{TEAM_NAME}/pl/{self.daily_report_posts[channel_id]['post_id']}"

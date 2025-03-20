@@ -231,6 +231,32 @@ def delete_excluded_user(username):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/config/twilio', methods=['GET'])
+def get_twilio_config():
+    """Get Twilio configuration."""
+    config = load_config_json()
+    return jsonify(config.get('twilio', {}))
+
+@app.route('/api/config/twilio', methods=['POST'])
+def update_twilio_config():
+    """Update Twilio configuration."""
+    try:
+        data = request.get_json()
+        config = load_config_json()
+        
+        # Update Twilio configuration
+        if 'twilio' not in config:
+            config['twilio'] = {}
+        config['twilio'].update(data)
+        
+        # Save to file
+        with open('config.json', 'w') as f:
+            json.dump(config, f, indent=4)
+            
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == '__main__':
     # Create templates directory if it doesn't exist
     os.makedirs('templates', exist_ok=True)

@@ -116,6 +116,22 @@
                 </div>
             </div>
         </div>
+
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Twilio Configuration</h5>
+                        <button class="btn btn-primary btn-sm" onclick="showTwilioConfigModal()">Configure Twilio</button>
+                    </div>
+                    <div class="card-body">
+                        <div id="twilioStatus" class="alert alert-info">
+                            Loading Twilio status...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- User Modal -->
@@ -208,17 +224,64 @@
         </div>
     </div>
 
+    <!-- Twilio Modal -->
+    <div class="modal fade" id="twilioModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Twilio Configuration</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="twilioForm">
+                        <div class="form-group">
+                            <label>Enable SMS Notifications</label>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="twilioEnabled">
+                                <label class="form-check-label" for="twilioEnabled">Enable SMS notifications</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Account SID</label>
+                            <input type="text" class="form-control" id="twilioAccountSid">
+                        </div>
+                        <div class="form-group">
+                            <label>Auth Token</label>
+                            <input type="password" class="form-control" id="twilioAuthToken">
+                        </div>
+                        <div class="form-group">
+                            <label>From Number</label>
+                            <input type="text" class="form-control" id="twilioFromNumber">
+                        </div>
+                        <div class="form-group">
+                            <label>SMS Template</label>
+                            <textarea class="form-control" id="twilioSmsTemplate" rows="3"></textarea>
+                            <small class="form-text text-muted">
+                                Available variables: {username}, {channel_name}, {thread_link}
+                            </small>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveTwilioConfig()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let userTable, channelTable, excludedUsersTable;
-        let userModal, channelModal, excludedUserModal;
+        let userModal, channelModal, excludedUserModal, twilioModal;
 
         $(document).ready(function() {
             userModal = new bootstrap.Modal(document.getElementById('userModal'));
             channelModal = new bootstrap.Modal(document.getElementById('channelModal'));
             excludedUserModal = new bootstrap.Modal(document.getElementById('excludedUserModal'));
+            twilioModal = new bootstrap.Modal(document.getElementById('twilioModal'));
 
             userTable = $('#userTable').DataTable({
                 columns: [
@@ -269,6 +332,7 @@
             });
 
             loadData();
+            loadTwilioConfig();
         });
 
         function loadData() {
@@ -297,6 +361,26 @@
                 .catch(error => {
                     console.error('Error loading data:', error);
                     alert('Error loading data. Please check the console for details.');
+                });
+        }
+
+        function loadTwilioConfig() {
+            fetch('/api/config/twilio')
+                .then(response => response.json())
+                .then(data => {
+                    const status = document.getElementById('twilioStatus');
+                    if (data.enabled) {
+                        status.className = 'alert alert-success';
+                        status.innerHTML = 'SMS notifications are enabled';
+                    } else {
+                        status.className = 'alert alert-warning';
+                        status.innerHTML = 'SMS notifications are disabled';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading Twilio config:', error);
+                    document.getElementById('twilioStatus').className = 'alert alert-danger';
+                    document.getElementById('twilioStatus').innerHTML = 'Error loading Twilio configuration';
                 });
         }
 
@@ -480,6 +564,54 @@
                     }
                 });
             }
+        }
+
+        function showTwilioConfigModal() {
+            fetch('/api/config/twilio')
+                .then(response => response.json())
+                .then(data => {
+                    $('#twilioEnabled').prop('checked', data.enabled);
+                    $('#twilioAccountSid').val(data.account_sid);
+                    $('#twilioAuthToken').val(data.auth_token);
+                    $('#twilioFromNumber').val(data.from_number);
+                    $('#twilioSmsTemplate').val(data.sms_template);
+                    twilioModal.show();
+                })
+                .catch(error => {
+                    console.error('Error loading Twilio config:', error);
+                    alert('Error loading Twilio configuration');
+                });
+        }
+
+        function saveTwilioConfig() {
+            const data = {
+                enabled: $('#twilioEnabled').prop('checked'),
+                account_sid: $('#twilioAccountSid').val(),
+                auth_token: $('#twilioAuthToken').val(),
+                from_number: $('#twilioFromNumber').val(),
+                sms_template: $('#twilioSmsTemplate').val()
+            };
+
+            fetch('/api/config/twilio', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    twilioModal.hide();
+                    loadTwilioConfig();
+                } else {
+                    alert('Error saving Twilio configuration: ' + result.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error saving Twilio configuration');
+            });
         }
     </script>
 </body>

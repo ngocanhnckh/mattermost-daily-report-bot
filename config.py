@@ -40,6 +40,13 @@ Let's do it together! \n
             'jira': {
                 'url': os.getenv('JIRA_URL', ''),
                 'token': os.getenv('JIRA_TOKEN', '')
+            },
+            'twilio': {
+                'enabled': False,
+                'account_sid': os.getenv('TWILIO_ACCOUNT_SID', ''),
+                'auth_token': os.getenv('TWILIO_AUTH_TOKEN', ''),
+                'from_number': os.getenv('TWILIO_FROM_NUMBER', ''),
+                'sms_template': "Hey {username}! Don't forget to submit your daily report in {channel_name}. Reply to the thread: {thread_link}"
             }
         }
 
@@ -48,7 +55,6 @@ config_json = load_config_json()
 
 # Messages and schedule settings
 DAILY_REPORT_MESSAGE = config_json['messages']['daily_report']
-REMINDER_MESSAGE = config_json['messages']['reminder']
 REMIND_TASK_MESSAGE = config_json['messages']['remind_task']
 REPORT_TIME = config_json['schedule']['report_time']
 REMINDER_INTERVAL = config_json['schedule']['reminder_interval']
@@ -88,4 +94,11 @@ SITE_NAME = os.getenv('SITE_NAME', '')
 
 # Jira Configuration
 JIRA_URL = config_json.get('jira', {}).get('url', os.getenv('JIRA_URL'))
-JIRA_TOKEN = config_json.get('jira', {}).get('token', os.getenv('JIRA_TOKEN')) 
+JIRA_TOKEN = config_json.get('jira', {}).get('token', os.getenv('JIRA_TOKEN'))
+
+# Twilio Configuration
+TWILIO_ENABLED = config_json.get('twilio', {}).get('enabled', False)
+TWILIO_ACCOUNT_SID = config_json.get('twilio', {}).get('account_sid', os.getenv('TWILIO_ACCOUNT_SID'))
+TWILIO_AUTH_TOKEN = config_json.get('twilio', {}).get('auth_token', os.getenv('TWILIO_AUTH_TOKEN'))
+TWILIO_FROM_NUMBER = config_json.get('twilio', {}).get('from_number', os.getenv('TWILIO_FROM_NUMBER'))
+TWILIO_SMS_TEMPLATE = config_json.get('twilio', {}).get('sms_template', "Hey {username}! Don't forget to submit your daily report in {channel_name}. Reply to the thread: {thread_link}") 
