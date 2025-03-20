@@ -106,14 +106,10 @@ class AIValidator:
                 print("Calling OpenRouter API...")
                 # Call the AI
                 completion = self.client.chat.completions.create(
-                    model="google/gemini-2.0-flash-lite-001",
-                    extra_headers=self.extra_headers,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ]
+                    model="google/gemini-2.0-flash-001",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=4096,
+                    extra_headers=self.extra_headers
                 )
                 
                 print("Received API response, parsing result...")
@@ -235,7 +231,9 @@ class AIValidator:
                 messages_text = " ".join(words[:3000]) + " ... (truncated)"
             
             # First, determine the type of question
-            question_type_prompt = f"""Determine if this question is asking for a project status report, a reminder request, or other types of requests.
+            question_type_prompt = f"""Determine if this question is asking for other types of requests or a project status report, a reminder request
+
+Do not try to guess, since sometime user's question is the follow up of previous messages that you are not provided, in case you feel unsure, just output "other"
 
 Question: {question}
 
@@ -247,10 +245,10 @@ Return a JSON response with this format:
 }}
 
 Important:
-- "project_status": When user specifically asked for a detailed report of the project (not specific task or team member's task).
-- "reminder": When user asks to be reminded about something at a specific time
-- "other": Task creation/updates, general questions, assignment changes, has a specific question about specific task or team member's task  etc, 
-- Only classify as "reminder" if there's a clear time component (e.g., "in 2 hours", "tomorrow at 3pm")"""
+- "other": Request for task update in Jira; Task creation/updates, general questions, assignment changes, want to execute an action related to jira, has a specific question about specific task or team member's task  etc. example: update missing task for me, create a task, check some task, please continue updating (update tiếp đi)...
+- "project_status": When user specifically asked for a detailed report of the project (not specific task or team member's task). Remember they must mention "detailed report"
+- "reminder": Only output this when user specifically asked to be reminded about something at a specific time. User must actually say "remind me" or something like that.
+"""
 
             # Get question type analysis
             type_completion = self.client.chat.completions.create(
@@ -258,12 +256,13 @@ Important:
                 messages=[{"role": "user", "content": question_type_prompt}],
                 extra_headers=self.extra_headers
             )
-            
+            print("Type completion:")
             type_response = type_completion.choices[0].message.content
+            print(type_response)
             question_type = json.loads(type_response.replace('```json', '').replace('```', '').strip())
             
             # If it's a reminder request with high confidence, handle it
-            if question_type['type'] == 'reminder' and question_type['confidence'] > 0.7:
+            if question_type['type'] == 'reminder' and question_type['confidence'] > 0.9:
                 reminder_prompt = f"""Parse this reminder request and extract the details.
 
 Request: {question}
@@ -628,8 +627,9 @@ Important:
 
                 # Get main analysis
                 completion = self.client.chat.completions.create(
-                    model="google/gemini-flash-1.5",
+                    model="google/gemini-2.0-flash-001",
                     messages=[{"role": "user", "content": prompt}],
+                    max_tokens=4096,
                     extra_headers=self.extra_headers
                 )
                 
