@@ -633,12 +633,14 @@ If user asked to summarize messages or asked what recently happened in many chan
         - Assignees should match their expertise (see their bios)
         - All new tasks will be added to the current sprint
         - Do not create duplicate tasks
+        - When asked about workload, COMPARE the total estimate user of each member against all the task assigned to them in that week timeline, see if they overloaded assuming they have 8 hours per day. Explain to user the calculation and the result if they smaller or bigger than 40 hours per week for the assigned member. (for estimate 1d=8 hours)
         - If just information is needed, make response clear and helpful
         - When asked to breakdown a technical feature or task, think as a technical developer PM. The task should be well-defined with specific technology, tech stack, tools, etc. for example if the team member using NestJS -> create NestJS CRUD API for feature X. If user using Lang Graph -> create a Lang Graph workflow for feature Y.
         - If tasks are needed, ensure they're well-defined and actionable
         - One jira user should not have more than 3 tasks has the in progress status, or else they can't focus
         - Aware of user's whole username. Do not assume their firstname or lastname is the same mean they are the same. for example: "Anh Nguyen" and "Viet Anh Nguyen" are 2 different person
         - If user asked for message summarization, no action needed, just summarize <Recent Channel Messages> in a concise summary passage and recommended next steps.
+        - When you are asked a question, please answer it fully in the 'response' field, don't cut off the answer to the 'reasoning' field
         """
                         print(prompt)
                         # Get main analysis
