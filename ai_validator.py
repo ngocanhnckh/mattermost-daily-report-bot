@@ -227,8 +227,9 @@ class AIValidator:
             # Convert prior_messages list to string and limit to 3000 words
             messages_text = " ".join(prior_messages)
             words = messages_text.split()
-            if len(words) > 3000:
-                messages_text = " ".join(words[:3000]) + " ... (truncated)"
+            if len(words) > 10000:
+                messages_text = " ".join(words[:10000]) + " ... (truncated)"
+            
             
             # First, determine the type of question
             question_type_prompt = f"""Determine if this question is asking for other types of requests or a project status report, a reminder request
@@ -245,7 +246,7 @@ Return a JSON response with this format:
 }}
 
 Important:
-- "other": Request for task update in Jira; Task creation/updates, general questions, assignment changes, want to execute an action related to jira, has a specific question about specific task or team member's task  etc. example: update missing task for me, create a task, check some task, please continue updating (update tiếp đi)...
+- "other": Request for task update in Jira; Task creation/updates, request for checking their task and dicussion (example check all my task and disccussion) general questions, assignment changes, want to execute an action related to jira, has a specific question about specific task or team member's task  etc. example: update missing task for me, create a task,...
 - "project_status": When user specifically asked for a detailed report of the project (not specific task or team member's task). Remember they must mention "detailed report"
 - "reminder": Only output this when user specifically asked to be reminded about something at a specific time. User must actually say "remind me" or something like that.
 """
@@ -468,7 +469,8 @@ Return a JSON response with this format:
 }}
 
 Important:
-- If you see consecutive messages that potentially related to the question, mark as needing context, capture at least 5 messages
+- If you see consecutive messages that potentially related to the question, mark as needing context
+- If user asked to check for their recent messages, just mark as much messages as possible
 - Only mark as needing context if the recent messages contain information crucial to understanding or answering the question
 - For task updates (status changes, estimates, etc.), context usually isn't needed
 - For questions referencing recent discussions or specific details mentioned earlier, context is important
@@ -624,7 +626,7 @@ Important:
 - One jira user should not have more than 3 tasks has the in progress status, or else they can't focus
 - Aware of user's whole username. Do not assume their firstname or lastname is the same mean they are the same. for example: "Anh Nguyen" and "Viet Anh Nguyen" are 2 different person
 - Answer using user's language and style of communication and aware username when they are asking what they should do to get the correct task belongs to them (user orignal message (with username): "{question}")"""
-
+                print(prompt)
                 # Get main analysis
                 completion = self.client.chat.completions.create(
                     model="google/gemini-2.0-flash-001",

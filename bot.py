@@ -831,7 +831,7 @@ class ScrumBot:
             user_channels = []
             for channel_id, channel_info in self.channels.items():
                 if username in channel_info.get('members', []):
-                    user_channels.append(channel_id)
+                    user_channels.append((channel_id, channel_info.get('name', 'Unknown')))
             
             if not user_channels:
                 print(f"No channels found for user {username}")
@@ -840,36 +840,60 @@ class ScrumBot:
             print(f"Found {len(user_channels)} channels for user {username}")
             
             # Get recent messages from each channel
-            all_messages = []
-            for channel_id in user_channels:
+            formatted_messages = []
+            for channel_id, channel_name in user_channels:
                 try:
-                    # Get channel messages using the correct API method
+                    # Skip DM channels and Town Square
+                    if '__' in channel_name or channel_name == '' or channel_name == 'town-square':
+                        print(f"Skipping channel: {channel_name}")
+                        continue
+                        
+                    # Add channel separator
+                    formatted_messages.append(f"\nNow showing messages for channel {channel_name}")
+                    
+                    # Get channel messages
                     posts = self.driver.posts.get_posts_for_channel(channel_id)
                     
                     if posts and 'posts' in posts:
+                        # Collect all messages (except bot messages) with their timestamps
+                        channel_messages = []
                         for post_id, post in posts['posts'].items():
                             if post.get('user_id') != self.bot_id:  # Skip bot messages
-                                all_messages.append({
-                                    'channel': self.channels[channel_id].get('name', 'Unknown'),
-                                    'username': post.get('user_id', 'Unknown'),
+                                try:
+                                    # Get the username for the message author
+                                    user = self.driver.users.get_user(post.get('user_id', ''))
+                                    poster_username = user['username']
+                                except:
+                                    poster_username = 'Unknown User'
+                                
+                                channel_messages.append({
+                                    'username': poster_username,
                                     'message': post.get('message', ''),
                                     'create_at': post.get('create_at', 0)
                                 })
+                        
+                        # Sort messages by timestamp (newest first) and take top 10
+                        channel_messages.sort(key=lambda x: x['create_at'], reverse=True)
+                        channel_messages = channel_messages[:10]
+                        
+                        if channel_messages:
+                            # Format messages with usernames
+                            formatted_messages.extend([
+                                f"@{msg['username']}: {msg['message']}"
+                                for msg in channel_messages
+                            ])
+                        else:
+                            formatted_messages.append("No recent messages in this channel")
                     else:
-                        print(f"No posts found for channel {channel_id}")
+                        formatted_messages.append("No messages found in this channel")
                         
                 except Exception as e:
-                    print(f"Error getting messages for channel {channel_id}: {e}")
+                    print(f"Error getting messages for channel {channel_name}: {e}")
+                    formatted_messages.append(f"Error retrieving messages for channel {channel_name}")
                     continue
             
-            # Sort messages by create_at and format them
-            all_messages.sort(key=lambda x: x['create_at'], reverse=True)
-            formatted_messages = [
-                f"[{msg['channel']}] @{msg['username']}: {msg['message']}"
-                for msg in all_messages[:100]  # Limit to 100 most recent messages
-            ]
-            
-            print(f"Found {len(formatted_messages)} recent messages across all channels")
+            print(f"Found messages from {len(user_channels)} channels")
+            print(formatted_messages)
             return formatted_messages
             
         except Exception as e:
