@@ -842,9 +842,9 @@ class ScrumBot:
                 }
                 formatted_tasks.append(formatted_task)
             
-            # Analyze the message with full context
+            # Analyze the message with full context, including username in the message
             analysis = self.message_analyzer.analyze_question(
-                question=message,
+                question=f"@{username}: {message}",
                 prior_messages=recent_messages,
                 active_tasks=formatted_tasks,
                 channel_members=channel_members

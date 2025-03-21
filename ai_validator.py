@@ -453,10 +453,11 @@ Important:
                 # Continue with regular question analysis (context check and main prompt)
                 context_prompt = f"""Analyze if this question needs context from recent channel messages to be properly understood and answered.
 
-Question: {question}
+User's Question: {question}
 
-Recent Channel Messages:
+<Recent Channel Messages>
 {messages_text}
+</Recent Channel Messages>
 
 Return a JSON response with this format:
 {{
@@ -470,12 +471,18 @@ Return a JSON response with this format:
 
 Important:
 - If you see consecutive messages that potentially related to the question, mark as needing context
-- If user asked to check for their recent messages, just mark as much messages as possible
 - Only mark as needing context if the recent messages contain information crucial to understanding or answering the question
 - For task updates (status changes, estimates, etc.), context usually isn't needed
 - For questions referencing recent discussions or specific details mentioned earlier, context is important
-- If the question is self-contained (like "create a task for X" or "mark Y as done"), no context needed"""
-
+- If the question is self-contained (like "create a task for X" or "mark Y as done"), no context needed
+If user asked to summarize messages or asked what recently happened in many channels:
+- Choose messages that raising a critical problem or issues in all channels
+- Choose messages that announce something important for the project or team
+- Choose message that some different user mentioned the asking user's username. For example if User's Question is "@userA: summarize my recent messages", then looks for messages from other user like "@userB: hey @userA, please help me...".  
+- Choose message that asking the asking user to do something
+- Summarize in a concise passage and recommended next steps
+"""
+                print(context_prompt)
                 # Get context analysis
                 context_completion = self.client.chat.completions.create(
                     model="google/gemini-flash-1.5",
@@ -615,6 +622,7 @@ Important:
         }}
 
         Important:
+        - Aware of the asking user's username in "User Question" to know who you are talking to and answer in their language, as well as giving them information related to them
         - Do not change time_estimates of tasks that has status Done
         - Today's date is {today_str}, all start dates must be >= today
         - Look for keywords indicating task updates like "done", "complete", "finished", "move", "change", "update", "extend"
@@ -626,10 +634,12 @@ Important:
         - All new tasks will be added to the current sprint
         - Do not create duplicate tasks
         - If just information is needed, make response clear and helpful
+        - When asked to breakdown a technical feature or task, think as a technical developer PM. The task should be well-defined with specific technology, tech stack, tools, etc. for example if the team member using NestJS -> create NestJS CRUD API for feature X. If user using Lang Graph -> create a Lang Graph workflow for feature Y.
         - If tasks are needed, ensure they're well-defined and actionable
         - One jira user should not have more than 3 tasks has the in progress status, or else they can't focus
         - Aware of user's whole username. Do not assume their firstname or lastname is the same mean they are the same. for example: "Anh Nguyen" and "Viet Anh Nguyen" are 2 different person
-        - Answer using user's language and style of communication and aware username when they are asking what they should do to get the correct task belongs to them (user orignal message (with username): "{question}")"""
+        - If user asked for message summarization, no action needed, just summarize <Recent Channel Messages> in a concise summary passage and recommended next steps.
+        """
                         print(prompt)
                         # Get main analysis
                         completion = self.client.chat.completions.create(
