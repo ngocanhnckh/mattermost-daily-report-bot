@@ -349,7 +349,7 @@ Important:
                 
                 # Format member context first
                 members_context = "\n".join([
-                    f"- @{username} ({details.get('jira_username', '')}): {details.get('bio', 'No bio')}"
+                    f"- @{username} (jira username: {details.get('jira_username', '')}): {details.get('bio', 'No bio')}"
                     for username, details in channel_members.items()
                 ])
                 

@@ -470,10 +470,16 @@ class ScrumBot:
         Returns:
             Tuple of (response message, created tasks, updated tasks)
         """
+        print("\n=== Starting Task Actions ===")
+        print(f"Project code: {project_code}")
+        print(f"Analysis action type: {analysis.get('action_type')}")
+        print(f"Number of updates to process: {len(analysis.get('updates', []))}")
+        
         created_tasks = []
         updated_tasks = []
         
         if analysis.get('action_type') == 'create':
+            print("\nProcessing task creation...")
             # Get the active sprint ID first
             boards = self.jira_service.jira.boards(projectKeyOrID=project_code)
             sprint_id = None
@@ -486,13 +492,16 @@ class ScrumBot:
             # Create new tasks
             for task in analysis.get('tasks', []):
                 try:
+                    print(f"\nCreating new task: {task['title']}")
                     # Get assignee's Jira username
                     assignee_info = get_user_mappings().get(task['assignee'])
                     if not assignee_info:
+                        print(f"No assignee mapping found for {task['assignee']}, skipping task")
                         continue
                         
                     # Determine if this is a story or regular task
                     is_story = task['type'] == 'story'
+                    print(f"Task type: {'Story' if is_story else 'Task'}")
                     
                     # Create issue in Jira
                     issue_dict = {
@@ -508,11 +517,14 @@ class ScrumBot:
                             'remainingEstimate': task['estimate']
                         }
                     }
+                    print(f"Creating Jira issue with fields: {issue_dict}")
                     
                     new_issue = self.jira_service.jira.create_issue(fields=issue_dict)
+                    print(f"Created new issue: {new_issue.key}")
                     
                     # Add the issue to the active sprint
                     if sprint_id:
+                        print(f"Adding {new_issue.key} to sprint {sprint_id}")
                         self.jira_service.jira.add_issues_to_sprint(sprint_id, [new_issue.key])
                     
                     created_task = {
@@ -526,10 +538,13 @@ class ScrumBot:
                     
                     # If this is a story, create sub-tasks
                     if is_story and 'sub_tasks' in task:
+                        print(f"Creating {len(task['sub_tasks'])} sub-tasks for {new_issue.key}")
                         for sub_task in task['sub_tasks']:
+                            print(f"Creating sub-task: {sub_task['title']}")
                             # Get sub-task assignee's Jira username
                             sub_assignee_info = get_user_mappings().get(sub_task['assignee'])
                             if not sub_assignee_info:
+                                print(f"No assignee mapping found for {sub_task['assignee']}, skipping sub-task")
                                 continue
                                 
                             # Create sub-task
@@ -549,9 +564,11 @@ class ScrumBot:
                             }
                             
                             new_sub_task = self.jira_service.jira.create_issue(fields=sub_task_dict)
+                            print(f"Created sub-task: {new_sub_task.key}")
                             
                             # Add sub-task to sprint
                             if sprint_id:
+                                print(f"Adding sub-task {new_sub_task.key} to sprint {sprint_id}")
                                 self.jira_service.jira.add_issues_to_sprint(sprint_id, [new_sub_task.key])
                             
                             created_task['sub_tasks'].append({
@@ -562,18 +579,27 @@ class ScrumBot:
                             })
                     
                     created_tasks.append(created_task)
+                    print(f"Successfully created task {new_issue.key} with {len(created_task['sub_tasks'])} sub-tasks")
                     
                 except Exception as e:
-                    print(f"Error creating task: {e}")
+                    print(f"Error creating task: {str(e)}")
+                    print(f"Full error: {traceback.format_exc()}")
                     continue
                 
         elif analysis.get('action_type') == 'update':
+            print("\nProcessing task updates...")
             # Handle task updates
             for update in analysis.get('updates', []):
                 try:
+                    print(f"\nProcessing update for task {update['key']}:")
+                    print(f"Action: {update['action']}")
+                    print(f"Fields to update: {update.get('fields', {})}")
+                    
                     if update['action'] == 'convert_to_story':
+                        print("Converting task to story...")
                         # Get the original task
                         original_task = self.jira_service.jira.issue(update['key'])
+                        print(f"Retrieved original task: {original_task.key}")
                         
                         # Create new story
                         story_dict = {
@@ -585,15 +611,20 @@ class ScrumBot:
                             self.jira_service.start_date_field: getattr(original_task.fields, self.jira_service.start_date_field, None),
                             self.jira_service.end_date_field: getattr(original_task.fields, self.jira_service.end_date_field, None)
                         }
+                        print(f"Creating new story with fields: {story_dict}")
                         
                         new_story = self.jira_service.jira.create_issue(fields=story_dict)
+                        print(f"Created new story: {new_story.key}")
                         
                         # Create sub-tasks
                         created_sub_tasks = []
+                        print(f"Creating {len(update['sub_tasks'])} sub-tasks for {new_story.key}")
                         for sub_task in update['sub_tasks']:
+                            print(f"Creating sub-task: {sub_task['title']}")
                             # Get sub-task assignee's Jira username
                             sub_assignee_info = get_user_mappings().get(sub_task['assignee'])
                             if not sub_assignee_info:
+                                print(f"No assignee mapping found for {sub_task['assignee']}, skipping sub-task")
                                 continue
                                 
                             # Create sub-task
@@ -613,6 +644,7 @@ class ScrumBot:
                             }
                             
                             new_sub_task = self.jira_service.jira.create_issue(fields=sub_task_dict)
+                            print(f"Created sub-task: {new_sub_task.key}")
                             created_sub_tasks.append({
                                 'key': new_sub_task.key,
                                 'url': f"{JIRA_URL}/browse/{new_sub_task.key}",
@@ -621,6 +653,7 @@ class ScrumBot:
                             })
                         
                         # Delete the original task
+                        print(f"Deleting original task {original_task.key}")
                         original_task.delete()
                         
                         updated_tasks.append({
@@ -632,26 +665,34 @@ class ScrumBot:
                             'sub_tasks': created_sub_tasks,
                             'reason': update['reason']
                         })
+                        print(f"Successfully converted {update['key']} to story {new_story.key}")
                         
                     else:  # Regular update
+                        print("Performing regular update...")
                         issue = self.jira_service.jira.issue(update['key'])
+                        print(f"Retrieved issue: {issue.key}")
                         update_dict = {}
                         
                         # Status update
                         if 'status' in update['fields']:
-                            # Get transition ID for the desired status
+                            print(f"Updating status to: {update['fields']['status']}")
                             transitions = self.jira_service.jira.transitions(issue)
+                            print(f"Available transitions: {[t['to']['name'] for t in transitions]}")
                             for t in transitions:
                                 if t['to']['name'].lower() == update['fields']['status'].lower():
+                                    print(f"Found matching transition ID: {t['id']}")
                                     self.jira_service.jira.transition_issue(issue, t['id'])
+                                    print(f"Status updated successfully for {issue.key}")
                                     break
                         
                         # End date update
                         if 'end_date' in update['fields']:
+                            print(f"Updating end date to: {update['fields']['end_date']}")
                             update_dict[self.jira_service.end_date_field] = update['fields']['end_date']
                         
                         # Estimate update
                         if 'estimate' in update['fields']:
+                            print(f"Updating estimate to: {update['fields']['estimate']}")
                             update_dict['timetracking'] = {
                                 'originalEstimate': update['fields']['estimate'],
                                 'remainingEstimate': update['fields']['estimate']
@@ -659,13 +700,16 @@ class ScrumBot:
                         
                         # Assignee update
                         if 'assignee' in update['fields']:
+                            print(f"Updating assignee to: {update['fields']['assignee']}")
                             assignee_info = get_user_mappings().get(update['fields']['assignee'])
-                            if assignee_info:
-                                update_dict['assignee'] = {'name': assignee_info['jira_username']}
+                            update_dict['assignee'] = {'name': assignee_info['jira_username']}
+                            
                         
                         # Apply updates if any
                         if update_dict:
+                            print(f"Applying updates to {issue.key}: {update_dict}")
                             issue.update(fields=update_dict)
+                            print(f"Updates applied successfully to {issue.key}")
                         
                         updated_tasks.append({
                             'key': issue.key,
@@ -674,15 +718,22 @@ class ScrumBot:
                             'changes': list(update['fields'].keys()),
                             'reason': update['reason']
                         })
+                        print(f"Added task {issue.key} to updated_tasks list")
                     
                 except Exception as e:
-                    print(f"Error updating task {update['key']}: {e}")
+                    print(f"Error updating task {update['key']}: {str(e)}")
+                    print(f"Full error: {traceback.format_exc()}")
                     continue
+        
+        print("\n=== Task Actions Summary ===")
+        print(f"Created tasks: {len(created_tasks)}")
+        print(f"Updated tasks: {len(updated_tasks)}")
         
         # Format response
         response = f"{analysis['response']}\n\n"
         
         if created_tasks:
+            print("\nAdding created tasks to response...")
             response += "### Created Tasks:\n"
             for task in created_tasks:
                 response += f"- [{task['key']}]({task['url']}): {task['title']} (Assigned to @{task['assignee']})\n"
@@ -692,6 +743,7 @@ class ScrumBot:
                         response += f"  - [{sub_task['key']}]({sub_task['url']}): {sub_task['title']} (Assigned to @{sub_task['assignee']})\n"
         
         if updated_tasks:
+            print("\nAdding updated tasks to response...")
             response += "\n### Task Updates:\n"
             for task in updated_tasks:
                 if task.get('action') == 'converted_to_story':
@@ -707,10 +759,12 @@ class ScrumBot:
                     response += f"  • Reason: {task['reason']}\n"
         
         if analysis.get('reasoning'):
+            print("\nAdding reasoning to response...")
             response += "\n------------------------\n *Reasoning:*\n"
             for aspect, explanation in analysis['reasoning'].items():
                 response += f"- {aspect.replace('_', ' ').title()}: {explanation}\n"
         
+        print("\nTask actions completed successfully")
         return response, created_tasks, updated_tasks
 
     async def _handle_dm(self, post):
@@ -1493,22 +1547,30 @@ class ScrumBot:
 
     async def _handle_bot_mention(self, post_data):
         try:
+            print("\n=== Handling Bot Mention ===")
             # Get the root_id - if this is a thread reply, use the parent thread's id
             root_id = post_data.get('root_id') or post_data.get('id')
+            print(f"Root ID: {root_id}")
             
             channel_id = post_data['channel_id']
             user_id = post_data['user_id']
             message = post_data['message'].replace(f'@{BOT_USERNAME}', '').strip()  # Remove bot mention
+            print(f"Channel ID: {channel_id}")
+            print(f"User ID: {user_id}")
+            print(f"Message: {message}")
             
             # Get channel info
             channel_info = self.channels.get(channel_id, {})
             channel_name = channel_info.get('name', '')
+            print(f"Channel name: {channel_name}")
             
             # Get Jira project code
             channel_mapping = get_channel_mappings().get(channel_name, {})
             project_code = channel_mapping.get('jira_project')
+            print(f"Project code: {project_code}")
             
             if not project_code:
+                print("No project code found for channel, sending error message")
                 self.driver.posts.create_post({
                     'channel_id': channel_id,
                     'message': "Sorry, this channel is not configured with a Jira project.",
@@ -1518,13 +1580,16 @@ class ScrumBot:
             
             # Get user info
             username = self.driver.users.get_user(user_id)['username']
+            print(f"Username: {username}")
             
             # Get prior messages
+            print("\nGathering prior messages...")
             posts = self.driver.posts.get_posts_for_channel(channel_id)
             prior_messages = []
             
             # Check if this is a thread reply
             is_thread_reply = bool(post_data.get('root_id'))
+            print(f"Is thread reply: {is_thread_reply}")
             
             for post in sorted(posts['posts'].values(), key=lambda x: x['create_at'], reverse=True):
                 if post['id'] != post_data['id']:  # Skip the current message
@@ -1542,10 +1607,14 @@ class ScrumBot:
                 if len(prior_messages) >= 30:
                     break
             
+            print(f"Gathered {len(prior_messages)} prior messages")
+            
             # Get recently updated tasks for this project
             active_tasks = []
             if project_code:
+                print("\nGetting recent project tasks...")
                 active_tasks = self.jira_service.get_recent_project_tasks(project_code)
+                print(f"Found {len(active_tasks)} active tasks")
             
             # Get channel members with their details
             channel_members = {
@@ -1553,8 +1622,10 @@ class ScrumBot:
                 for member in channel_info.get('members', [])
                 if member not in get_excluded_users() and member != BOT_USERNAME
             }
+            print(f"\nChannel members: {len(channel_members)}")
             
             # Analyze the question with username in the message
+            print("\nAnalyzing question...")
             analysis = self.ai_validator.analyze_question(
                 f"@{username}: {message}",
                 prior_messages,
@@ -1562,11 +1633,15 @@ class ScrumBot:
                 channel_members
             )
             
-            print("Analysis:")
-            print(analysis)
+            print("\nAnalysis result:")
+            print(f"Needs action: {analysis.get('needs_action')}")
+            print(f"Action type: {analysis.get('action_type')}")
+            print(f"Number of tasks: {len(analysis.get('tasks', []))}")
+            print(f"Number of updates: {len(analysis.get('updates', []))}")
             
             if analysis['needs_action']:
                 if analysis['action_type'] == 'reminder':
+                    print("\nHandling reminder request...")
                     # Handle reminder request
                     reminder_info = analysis.get('reminder', {})
                     if reminder_info and 'time' in reminder_info:
@@ -1581,17 +1656,22 @@ class ScrumBot:
                             'message': reminder_info['message']
                         }
                         self.pending_reminders[channel_id][target_username] = reminder_content
-                        print(reminder_content)
+                        print(f"Reminder set for {target_username} at {reminder_content['time']}")
+                        
                         # Send confirmation
                         self.driver.posts.create_post({
                             'channel_id': channel_id,
                             'message': analysis['response'],
                             'root_id': root_id
                         })
-                        print(f"Reminder sent to {target_username}")
+                        print(f"Reminder confirmation sent to {target_username}")
                         
                 elif project_code:  # Handle other actions only if project code exists
+                    print("\nHandling task actions...")
                     response, created_tasks, updated_tasks = await self._handle_task_actions(analysis, project_code)
+                    print(f"\nTask actions completed:")
+                    print(f"Created tasks: {len(created_tasks)}")
+                    print(f"Updated tasks: {len(updated_tasks)}")
                     
                     # Send response
                     self.driver.posts.create_post({
@@ -1599,8 +1679,10 @@ class ScrumBot:
                         'message': response,
                         'root_id': root_id
                     })
+                    print("Response sent to channel")
                 else:
                     # Send response for non-project channels
+                    print("\nNo project code found, sending error message")
                     self.driver.posts.create_post({
                         'channel_id': channel_id,
                         'message': "Sorry, this channel is not configured with a Jira project.",
@@ -1610,6 +1692,7 @@ class ScrumBot:
                 print(f"Response sent to channel {channel_name}")
                 
             else:
+                print("\nNo action needed, sending informational response")
                 response = analysis['response']
                 
                 # Send response
