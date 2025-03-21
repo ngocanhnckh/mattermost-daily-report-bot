@@ -232,7 +232,7 @@ class AIValidator:
             
             
             # First, determine the type of question
-            question_type_prompt = f"""Determine if this question is asking for other types of requests or a project status report, a reminder request
+            question_type_prompt = f"""Determine if this question is asking for general project action, info or a detailed project report or a reminder request
 
 Do not try to guess, since sometime user's question is the follow up of previous messages that you are not provided, in case you feel unsure, just output "other"
 
@@ -247,7 +247,7 @@ Return a JSON response with this format:
 
 Important:
 - "other": Request for task update in Jira; Task creation/updates, request for checking their task and dicussion (example check all my task and disccussion) general questions, assignment changes, want to execute an action related to jira, has a specific question about specific task or team member's task  etc. example: update missing task for me, create a task,...
-- "project_status": When user specifically asked for a detailed report of the project (not specific task or team member's task). Remember they must mention "detailed report"
+- "project_status": When user specifically add for or mention "detailed report" of the project. Other wise, if they just ask about update task status, output as "other"
 - "reminder": Only output this when user specifically asked to be reminded about something at a specific time. User must actually say "remind me" or something like that.
 """
 

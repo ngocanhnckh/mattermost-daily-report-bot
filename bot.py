@@ -316,6 +316,10 @@ class ScrumBot:
                 reported_users = set(self.db.get_today_reports(channel_id))
                 print(f"Users who have reported: {reported_users}")
                 
+                # Initialize or get the channel's reminder tracking
+                if channel_id not in self.pending_reminders:
+                    self.pending_reminders[channel_id] = {}
+                
                 # Check each member
                 for member in members:
                     print(f"\nChecking member: {member}")
@@ -335,9 +339,22 @@ class ScrumBot:
                         print(f"User {member} is the bot, skipping")
                         continue
                     
+                    # Check if it's time to send another reminder
+                    last_reminder = self.pending_reminders[channel_id].get(member)
+                    if last_reminder:
+                        # If last_reminder is a datetime, check if enough time has passed
+                        if isinstance(last_reminder, datetime):
+                            time_since_last = current_time - last_reminder
+                            if time_since_last < timedelta(hours=reminder_interval):
+                                print(f"Not enough time has passed since last reminder for {member} ({time_since_last} < {reminder_interval} hours)")
+                                continue
+                    
                     # Send reminder
                     print(f"Sending reminder to {member}")
                     self._send_reminder_dm(member)
+                    
+                    # Update the last reminder time
+                    self.pending_reminders[channel_id][member] = current_time
             
             # Check custom reminders (new section)
             print("\nChecking custom reminders...")
