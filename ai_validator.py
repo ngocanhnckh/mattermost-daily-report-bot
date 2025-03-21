@@ -514,135 +514,143 @@ Important:
                     for username, details in channel_members.items()
                 ])
 
-                # Main analysis prompt
-                prompt = f"""Analyze this question and determine if it needs action (creating or updating tasks) or just information.
+                # Retry 3 times if error
+                i = 3
+                while i >0:
+                    try:
+                        # Main analysis prompt
+                        prompt = f"""Analyze this question and determine if it needs action (creating or updating tasks) or just information.
 
-Today's Date: {today_str}
+        Today's Date: {today_str}
 
-User Question: {question}
+        User Question: {question}
 
-Context:
-<Active Sprint Tasks>
-{tasks_context}
-</Active Sprint Tasks>
+        Context:
+        <Active Sprint Tasks>
+        {tasks_context}
+        </Active Sprint Tasks>
 
-<Team Members>
-{members_context}
-</Team Members>
+        <Team Members>
+        {members_context}
+        </Team Members>
 
-<Recent Channel Messages>
-{messages_context}
-</Recent Channel Messages>
+        <Recent Channel Messages>
+        {messages_context}
+        </Recent Channel Messages>
 
-Determine if this needs:
-1. Just an informational response
-2. Creation of new tasks (either standalone tasks or stories with sub-tasks)
-3. Updates to existing tasks (including converting tasks to stories)
+        Determine if this needs:
+        1. Just an informational response
+        2. Creation of new tasks (either standalone tasks or stories with sub-tasks)
+        3. Updates to existing tasks (including converting tasks to stories)
 
-Important Task Creation Guidelines:
-1. If a task is complex or requires multiple steps, create it as a story with sub-tasks
-2. If a task will take more than 2 days or 16 hours, break it down into smaller sub-tasks
-3. If a task involves multiple team members or components, make it a story
-4. When creating a story, ensure sub-tasks are:
-   - Small enough to be completed in 1-2 days
-   - Clearly defined with specific outcomes
-   - Assigned to appropriate team members based on skills
-5. When suggesting to convert an existing task to a story:
-   - The original task should be deleted
-   - A new story should replace it
-   - Break down the work into appropriate sub-tasks
+        Important Task Creation Guidelines:
+        1. If a task is complex or requires multiple steps, create it as a story with sub-tasks
+        2. If a task will take more than 2 days or 16 hours, break it down into smaller sub-tasks
+        3. If a task involves multiple team members or components, make it a story
+        4. When creating a story, ensure sub-tasks are:
+        - Small enough to be completed in 1-2 days
+        - Clearly defined with specific outcomes
+        - Assigned to appropriate team members based on skills
+        5. When suggesting to convert an existing task to a story:
+        - The original task should be deleted
+        - A new story should replace it
+        - Break down the work into appropriate sub-tasks
 
-Return a JSON response with this format:
-{{
-    "needs_action": boolean,
-    "response": "Clear response to the user's question",
-    "action_type": "create" | "update" | "info",
-    "tasks": [  // Only include if needs_action is true and action_type is "create"
+        Return a JSON response with this format:
         {{
-            "type": "story" | "task",  // Whether this is a story or standalone task
-            "title": "Clear task title",
-            "assignee": "username",
-            "start_date": "YYYY-MM-DD",
-            "end_date": "YYYY-MM-DD",
-            "estimate": "Xh",
-            "description": "Detailed task description",
-            "sub_tasks": [  // Only include for stories
+            "needs_action": boolean,
+            "response": "Clear response to the user's question",
+            "action_type": "create" | "update" | "info",
+            "tasks": [  // Only include if needs_action is true and action_type is "create"
                 {{
-                    "title": "Sub-task title",
+                    "type": "story" | "task",  // Whether this is a story or standalone task
+                    "title": "Clear task title",
                     "assignee": "username",
                     "start_date": "YYYY-MM-DD",
                     "end_date": "YYYY-MM-DD",
                     "estimate": "Xh",
-                    "description": "Detailed sub-task description"
-                }}
-            ]
-        }}
-    ],
-    "updates": [  // Only include if needs_action is true and action_type is "update"
-        {{
-            "key": "XXX-123",
-            "action": "update" | "convert_to_story",  // Whether to update fields or convert to story
-            "fields": {{  // Only for "update" action
-                "status": "To Do" | "In Progress" | "Done",
-                "end_date": "YYYY-MM-DD",
-                "estimate": "Xh",
-                "assignee": "username"
-            }},
-            "sub_tasks": [  // Only for "convert_to_story" action
-                {{
-                    "title": "Sub-task title",
-                    "assignee": "username",
-                    "start_date": "YYYY-MM-DD",
-                    "end_date": "YYYY-MM-DD",
-                    "estimate": "Xh",
-                    "description": "Detailed sub-task description"
+                    "description": "Detailed task description",
+                    "sub_tasks": [  // Only include for stories
+                        {{
+                            "title": "Sub-task title",
+                            "assignee": "username",
+                            "start_date": "YYYY-MM-DD",
+                            "end_date": "YYYY-MM-DD",
+                            "estimate": "Xh",
+                            "description": "Detailed sub-task description"
+                        }}
+                    ]
                 }}
             ],
-            "reason": "Explanation of why this update/conversion is needed"
+            "updates": [  // Only include if needs_action is true and action_type is "update"
+                {{
+                    "key": "XXX-123",
+                    "action": "update" | "convert_to_story",  // Whether to update fields or convert to story
+                    "fields": {{  // Only for "update" action
+                        "status": "To Do" | "In Progress" | "Done",
+                        "end_date": "YYYY-MM-DD",
+                        "estimate": "Xh",
+                        "assignee": "username"
+                    }},
+                    "sub_tasks": [  // Only for "convert_to_story" action
+                        {{
+                            "title": "Sub-task title",
+                            "assignee": "username",
+                            "start_date": "YYYY-MM-DD",
+                            "end_date": "YYYY-MM-DD",
+                            "estimate": "Xh",
+                            "description": "Detailed sub-task description"
+                        }}
+                    ],
+                    "reason": "Explanation of why this update/conversion is needed"
+                }}
+            ],
+            "reasoning": {{
+                "action_needed": "Why tasks need to be created/updated/no action",
+                "task_breakdown": "Why tasks were broken down this way",
+                "assignee_choices": "Why these assignees were chosen",
+                "time_estimates": "How estimates were determined",
+                "date_planning": "Why these dates were chosen"
+            }}
         }}
-    ],
-    "reasoning": {{
-        "action_needed": "Why tasks need to be created/updated/no action",
-        "task_breakdown": "Why tasks were broken down this way",
-        "assignee_choices": "Why these assignees were chosen",
-        "time_estimates": "How estimates were determined",
-        "date_planning": "Why these dates were chosen"
-    }}
-}}
 
-Important:
-- Do not change time_estimates of tasks that has status Done
-- Today's date is {today_str}, all start dates must be >= today
-- Look for keywords indicating task updates like "done", "complete", "finished", "move", "change", "update", "extend"
-- For status updates, user might say things like "I finished XXX-123" or "Moving XXX-123 to Done"
-- For date changes, look for "need more time", "extend deadline", "move the end date"
-- For estimate updates, look for "this will take longer", "need X hours", "estimate should be"
-- Estimates should be realistic based on task complexity
-- Assignees should match their expertise (see their bios)
-- All new tasks will be added to the current sprint
-- Do not create duplicate tasks
-- If just information is needed, make response clear and helpful
-- If tasks are needed, ensure they're well-defined and actionable
-- One jira user should not have more than 3 tasks has the in progress status, or else they can't focus
-- Aware of user's whole username. Do not assume their firstname or lastname is the same mean they are the same. for example: "Anh Nguyen" and "Viet Anh Nguyen" are 2 different person
-- Answer using user's language and style of communication and aware username when they are asking what they should do to get the correct task belongs to them (user orignal message (with username): "{question}")"""
-                print(prompt)
-                # Get main analysis
-                completion = self.client.chat.completions.create(
-                    model="google/gemini-2.0-flash-001",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=4096,
-                    extra_headers=self.extra_headers
-                )
-                
-                response = completion.choices[0].message.content
-                cleaned_response = response.replace('```json', '').replace('```', '').strip()
-                result = json.loads(cleaned_response)
-                
-                print("AI response:")
-                print(result)
-                
-                return result
+        Important:
+        - Do not change time_estimates of tasks that has status Done
+        - Today's date is {today_str}, all start dates must be >= today
+        - Look for keywords indicating task updates like "done", "complete", "finished", "move", "change", "update", "extend"
+        - For status updates, user might say things like "I finished XXX-123" or "Moving XXX-123 to Done"
+        - For date changes, look for "need more time", "extend deadline", "move the end date"
+        - For estimate updates, look for "this will take longer", "need X hours", "estimate should be"
+        - Estimates should be realistic based on task complexity
+        - Assignees should match their expertise (see their bios)
+        - All new tasks will be added to the current sprint
+        - Do not create duplicate tasks
+        - If just information is needed, make response clear and helpful
+        - If tasks are needed, ensure they're well-defined and actionable
+        - One jira user should not have more than 3 tasks has the in progress status, or else they can't focus
+        - Aware of user's whole username. Do not assume their firstname or lastname is the same mean they are the same. for example: "Anh Nguyen" and "Viet Anh Nguyen" are 2 different person
+        - Answer using user's language and style of communication and aware username when they are asking what they should do to get the correct task belongs to them (user orignal message (with username): "{question}")"""
+                        print(prompt)
+                        # Get main analysis
+                        completion = self.client.chat.completions.create(
+                            model="google/gemini-2.0-flash-001",
+                            messages=[{"role": "user", "content": prompt}],
+                            max_tokens=4096,
+                            extra_headers=self.extra_headers
+                        )
+                        
+                        response = completion.choices[0].message.content
+                        cleaned_response = response.replace('```json', '').replace('```', '').strip()
+                        result = json.loads(cleaned_response)
+                        
+                        print("AI response:")
+                        print(result)
+                        return result
+                    except Exception as e:
+                        print(f"Error analyzing question: {e}")
+                        print(f"Full error: {traceback.format_exc()}")
+                        i -= 1
+                        continue
                 
         except Exception as e:
             print(f"Error analyzing question: {e}")
