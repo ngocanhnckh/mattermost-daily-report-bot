@@ -2,7 +2,7 @@ from openai import OpenAI
 import json
 from typing import Dict, Optional, List
 import traceback
-from config import JIRA_URL, TIMEZONE
+from config import JIRA_URL, TIMEZONE, get_channel_mappings
 from datetime import datetime
 
 class AIValidator:
@@ -224,13 +224,8 @@ class AIValidator:
             }
         
         try:
-            # Convert prior_messages list to string and limit to 3000 words
+            
             messages_text = " ".join(prior_messages)
-            words = messages_text.split()
-            if len(words) > 10000:
-                messages_text = " ".join(words[:10000]) + " ... (truncated)"
-            
-            
             # First, determine the type of question
             question_type_prompt = f"""Determine if this question is asking for general project action, info or a detailed project report or a reminder request
 
@@ -250,12 +245,11 @@ Important:
 - "project_status": When user specifically add for or mention "detailed report" of the project. Other wise, if they just ask about update task status, output as "other"
 - "reminder": Only output this when user specifically asked to be reminded about something at a specific time. User must actually say "remind me" or something like that.
 """
-
+            print(question_type_prompt)
             # Get question type analysis
             type_completion = self.client.chat.completions.create(
                 model="google/gemini-flash-1.5",
-                messages=[{"role": "user", "content": question_type_prompt}],
-                extra_headers=self.extra_headers
+                messages=[{"role": "user", "content": [{"type": "text", "text": question_type_prompt}]}]
             )
             print("Type completion:")
             type_response = type_completion.choices[0].message.content
@@ -456,7 +450,7 @@ Important:
 User's Question: {question}
 
 <Recent Channel Messages>
-{messages_text}
+{messages_text[:3000]}
 </Recent Channel Messages>
 
 Return a JSON response with this format:
@@ -540,6 +534,10 @@ If user asked to summarize messages or asked what recently happened in many chan
         <Team Members>
         {members_context}
         </Team Members>
+        
+        <ChannelName and JiraProjectCode Mapping>
+        {get_channel_mappings()}
+        </ChannelName and JiraProjectCode Mapping>
 
         <Recent Channel Messages>
         {messages_context}
@@ -568,6 +566,7 @@ If user asked to summarize messages or asked what recently happened in many chan
             "needs_action": boolean,
             "response": "Clear response to the user's question",
             "action_type": "create" | "update" | "info",
+            "jira_project_code": "XXXX",
             "tasks": [  // Only include if needs_action is true and action_type is "create"
                 {{
                     "type": "story" | "task",  // Whether this is a story or standalone task

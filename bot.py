@@ -510,10 +510,11 @@ class ScrumBot:
             for task in analysis.get('tasks', []):
                 try:
                     print(f"\nCreating new task: {task['title']}")
+                    task_assignee = task['assignee'].replace("@","")
                     # Get assignee's Jira username
-                    assignee_info = get_user_mappings().get(task['assignee'])
+                    assignee_info = get_user_mappings().get(task_assignee)
                     if not assignee_info:
-                        print(f"No assignee mapping found for {task['assignee']}, skipping task")
+                        print(f"No assignee mapping found for {task_assignee}, skipping task")
                         continue
                         
                     # Determine if this is a story or regular task
@@ -852,15 +853,12 @@ class ScrumBot:
             
             # Handle task actions if needed
             if analysis.get('needs_action'):
-                # Get the project code from the user's most recent task
-                project_code = None
-                if user_tasks:
-                    project_code = user_tasks[0]['key'].split('-')[0]
-                
+                # assing project code from the first task the analysis return
+                project_code = analysis.get('jira_project_code')
                 if project_code:
                     response, _, _ = await self._handle_task_actions(analysis, project_code)
                 else:
-                    response = analysis['response']
+                    response = analysis['response'] + "\n\n" + "No project code found in the analysis"
             else:
                 response = analysis['response']
             
