@@ -1414,49 +1414,90 @@ class ScrumBot:
             user_pending_channels = []
             for channel_id, report_info in self.daily_report_posts.items():
                 channel_info = self.channels.get(channel_id, {})
-                if username in channel_info.get('members', []):
-                    # Check if user has reported in this channel
-                    reported_users = set(self.db.get_today_reports(channel_id))
-                    if username not in reported_users:
-                        channel_name = report_info['channel_name']
-                        post_id = report_info['post_id']
-                        # Include team name in the thread link
-                        thread_link = f"{SITE_URL}/{TEAM_NAME}/pl/{post_id}"
-                        user_pending_channels.append({
-                            'name': channel_name,
-                            'link': thread_link
-                        })
+                channel_name = report_info['channel_name']
+                
+                # Skip if channel doesn't have a Jira project mapping
+                channel_mapping = get_channel_mappings().get(channel_name, {})
+                if not channel_mapping.get('jira_project'):
+                    print(f"Skipping channel {channel_name} - no Jira project mapping")
+                    continue
+
+                # Skip if user is not a member or has already reported
+                if username not in channel_info.get('members', []):
+                    print(f"Skipping channel {channel_name} - user not a member")
+                    continue
+
+                # Get user's Jira mapping
+                user_info = get_user_mappings().get(username, {})
+                jira_username = user_info.get('jira_username', username)
+
+                # Check if user has active tasks in this channel's project
+                jira_project = channel_mapping['jira_project']
+                active_tasks = self.jira_service.get_user_active_tasks(jira_username, jira_project)
+                
+                if not active_tasks:
+                    print(f"Skipping channel {channel_name} - user has no active tasks")
+                    continue
+
+                # Check if user has reported in this channel
+                reported_users = set(self.db.get_today_reports(channel_id))
+                if username not in reported_users:
+                    post_id = report_info['post_id']
+                    # Include team name in the thread link
+                    thread_link = f"{SITE_URL}/{TEAM_NAME}/pl/{post_id}"
+                    user_pending_channels.append({
+                        'name': channel_name,
+                        'link': thread_link
+                    })
             
             # Only send reminder if there are pending channels
             if user_pending_channels:
-                # Add date and thread links to the reminder message
-                message = (
-                    f"{REMIND_TASK_MESSAGE}"
-                    f"⏰ **Daily Report Reminder for {date_str}**\n\n"
-                    f"You still need to submit your daily report in the following channels:\n"
-                )
-                
-                for channel in user_pending_channels:
-                    message += f"• [{channel['name']}]({channel['link']})\n"
-                
-                # Send reminder message
-                self.driver.posts.create_post({
-                    'channel_id': dm_channel['id'],
-                    'message': message
-                })
-                print(f"Reminder sent to {username} for {len(user_pending_channels)} pending channels")
+                # Check if we've sent a reminder recently (within reminder interval)
+                any_recent_reminder = False
+                for channel_id in self.pending_reminders:
+                    last_reminder = self.pending_reminders[channel_id].get(username)
+                    if isinstance(last_reminder, datetime):
+                        time_since_last = current_time - last_reminder
+                        if time_since_last < timedelta(hours=float(REMINDER_INTERVAL)):
+                            print(f"Recent reminder found for {username}, skipping")
+                            any_recent_reminder = True
+                            break
 
-                # Send SMS reminder if enabled and user has a phone number
-                user_info = get_user_mappings().get(username, {})
-                if user_info.get('phone'):
-                    # Send SMS for each pending channel
+                if not any_recent_reminder:
+                    # Add date and thread links to the reminder message
+                    message = (
+                        f"{REMIND_TASK_MESSAGE}"
+                        f"⏰ **Daily Report Reminder for {date_str}**\n\n"
+                        f"You still need to submit your daily report in the following channels:\n"
+                    )
+                    
                     for channel in user_pending_channels:
-                        self.twilio_service.send_sms(
-                            to_number=user_info['phone'],
-                            username=username,
-                            channel_name=channel['name'],
-                            thread_link=channel['link']
-                        )
+                        message += f"• [{channel['name']}]({channel['link']})\n"
+                    
+                    # Send reminder message
+                    self.driver.posts.create_post({
+                        'channel_id': dm_channel['id'],
+                        'message': message
+                    })
+                    print(f"Reminder sent to {username} for {len(user_pending_channels)} pending channels")
+
+                    # Send SMS reminder if enabled and user has a phone number
+                    user_info = get_user_mappings().get(username, {})
+                    if user_info.get('phone'):
+                        # Send SMS for each pending channel
+                        for channel in user_pending_channels:
+                            self.twilio_service.send_sms(
+                                to_number=user_info['phone'],
+                                username=username,
+                                channel_name=channel['name'],
+                                thread_link=channel['link']
+                            )
+
+                    # Update last reminder time for all channels
+                    for channel_id in self.pending_reminders:
+                        self.pending_reminders[channel_id][username] = current_time
+                else:
+                    print(f"Skipping reminder for {username} - recent reminder exists")
             else:
                 print(f"No pending channels to remind {username} about")
                 
