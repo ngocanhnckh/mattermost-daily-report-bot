@@ -515,7 +515,8 @@ class ScrumBot:
                     assignee_info = get_user_mappings().get(task_assignee)
                     if not assignee_info:
                         print(f"No assignee mapping found for {task_assignee}, skipping task")
-                        continue
+                        assignee_info = task_assignee
+                        
                         
                     # Determine if this is a story or regular task
                     is_story = task['type'] == 'story'
@@ -563,7 +564,7 @@ class ScrumBot:
                             sub_assignee_info = get_user_mappings().get(sub_task['assignee'])
                             if not sub_assignee_info:
                                 print(f"No assignee mapping found for {sub_task['assignee']}, skipping sub-task")
-                                continue
+                                sub_assignee_info = sub_task['assignee']
                                 
                             # Create sub-task
                             sub_task_dict = {
@@ -643,7 +644,8 @@ class ScrumBot:
                             sub_assignee_info = get_user_mappings().get(sub_task['assignee'])
                             if not sub_assignee_info:
                                 print(f"No assignee mapping found for {sub_task['assignee']}, skipping sub-task")
-                                continue
+                                sub_assignee_info = sub_task['assignee']
+                                
                                 
                             # Create sub-task
                             sub_task_dict = {

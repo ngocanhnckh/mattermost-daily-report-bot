@@ -64,6 +64,8 @@ REPORT_DEADLINE_TIME = config_json['schedule'].get('report_deadline_time', '17:0
 def get_user_mappings():
     """Get user mappings from config.json, reloading on each call."""
     config = load_config_json()
+    print(config)
+    print(config.get('users', {}))
     return config.get('users', {})
 
 def get_channel_mappings():
