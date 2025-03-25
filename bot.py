@@ -513,10 +513,12 @@ class ScrumBot:
                     task_assignee = task['assignee'].replace("@","")
                     # Get assignee's Jira username
                     assignee_info = get_user_mappings().get(task_assignee)
+                    assignee_username = None
                     if not assignee_info:
                         print(f"No assignee mapping found for {task_assignee}, skipping task")
-                        assignee_info = task_assignee
-                        
+                        assignee_username = task_assignee
+                    else:
+                        assignee_username = assignee_info['jira_username']
                         
                     # Determine if this is a story or regular task
                     is_story = task['type'] == 'story'
@@ -528,7 +530,7 @@ class ScrumBot:
                         'summary': task['title'],
                         'description': task['description'],
                         'issuetype': {'name': 'Story' if is_story else 'Task'},
-                        'assignee': {'name': assignee_info['jira_username']},
+                        'assignee': {'name': assignee_username},
                         self.jira_service.start_date_field: task['start_date'],
                         self.jira_service.end_date_field: task['end_date'],
                         'timetracking': {
@@ -562,9 +564,12 @@ class ScrumBot:
                             print(f"Creating sub-task: {sub_task['title']}")
                             # Get sub-task assignee's Jira username
                             sub_assignee_info = get_user_mappings().get(sub_task['assignee'])
+                            sub_assignee_username = None
                             if not sub_assignee_info:
                                 print(f"No assignee mapping found for {sub_task['assignee']}, skipping sub-task")
-                                sub_assignee_info = sub_task['assignee']
+                                sub_assignee_username = sub_task['assignee']
+                            else:
+                                sub_assignee_username = sub_assignee_info['jira_username']
                                 
                             # Create sub-task
                             sub_task_dict = {
@@ -573,7 +578,7 @@ class ScrumBot:
                                 'description': sub_task['description'],
                                 'issuetype': {'name': 'Sub-task'},
                                 'parent': {'key': new_issue.key},
-                                'assignee': {'name': sub_assignee_info['jira_username']},
+                                'assignee': {'name': sub_assignee_username},
                                 self.jira_service.start_date_field: sub_task['start_date'],
                                 self.jira_service.end_date_field: sub_task['end_date'],
                                 'timetracking': {
