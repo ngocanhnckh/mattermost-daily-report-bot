@@ -2,7 +2,7 @@ from ai_validator import AIValidator
 from typing import List, Dict
 import logging
 import traceback
-
+import datetime
 logger = logging.getLogger(__name__)
 
 class MessageAnalyzer(AIValidator):
@@ -48,7 +48,10 @@ class MessageAnalyzer(AIValidator):
             # Format messages context
             messages_context = "\n".join(messages) if messages else "No messages found"
             
+            currentDate = datetime.now().strftime("%Y-%m-%d")
+            
             prompt = f"""Generate a daily report for user {username} based on their recent activities.
+            Today's date: {currentDate}
             
             Active Jira Tasks:
             {active_tasks_context}
