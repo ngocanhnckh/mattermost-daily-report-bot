@@ -138,6 +138,7 @@ class ScrumBot:
     def _run_scheduler(self):
         print("\nScheduler thread starting...")
         last_run_date = None
+        last_run_auto_report = None
         
         while True:
             try:
@@ -162,7 +163,7 @@ class ScrumBot:
                 print(f"Date check: {current_date != last_run_date}")
                 
                 if (current_hour == target_hour and 
-                    current_minute == target_minute and 
+                    current_minute >= target_minute and 
                     current_date != last_run_date):
                     
                     print(f"\n!!! TRIGGERING DAILY REPORT at {current_time} !!!")
@@ -174,9 +175,12 @@ class ScrumBot:
                 
                 # Check if it's deadline time for AI-generated reports
                 if (current_hour == deadline_hour and 
-                    current_minute == deadline_minute):
+                    current_minute >= deadline_minute and
+                    current_date != last_run_auto_report):
                     print(f"\n!!! CHECKING FOR MISSING REPORTS at {current_time} !!!")
                     self._check_and_send_ai_reports()
+                    last_run_auto_report = current_date
+                    print(f"Updated last run auto report date to: {last_run_auto_report}")
                 
                 # Check reminders every minute
                 self._check_reminders()
@@ -808,16 +812,20 @@ class ScrumBot:
             print(f"\n=== Handling DM from {username} ===")
             print(f"Message: {message}")
             
-            # Get user's active tasks from all projects
+            # Get user's active tasks from all projects where user is a channel member
             user_tasks = []
             for channel_id, channel_info in self.channels.items():
                 jira_project = channel_info.get('jira_project')
-                if jira_project:
+                print(f"Checking channel {channel_id} project {jira_project} for user {username}...")
+                
+                member_usernames = channel_info.get('members', [])
+                print(f"Member usernames: {member_usernames}")
+                if jira_project and username in member_usernames:
                     user_info = get_user_mappings().get(username, {})
                     jira_username = user_info.get('jira_username', username)
-                    tasks = self.jira_service.get_user_active_tasks(jira_username, jira_project)
+                    tasks = self.jira_service.get_recent_project_tasks(jira_project)
                     user_tasks.extend(tasks)
-            
+
             # Sort tasks by last updated
             user_tasks.sort(key=lambda x: x.get('updated', datetime.min), reverse=True)
             user_tasks = user_tasks[:100]  # Limit to 100 most recent tasks
@@ -846,11 +854,13 @@ class ScrumBot:
                     'assignee_display_name': task.get('assignee_display_name', ''),
                     'url': task.get('url', ''),
                     'original_estimate': task.get('original_estimate', ''),
-                    'updated': task.get('updated', datetime.min)
+                    'updated': task.get('updated', datetime.min),
+                    'description': task.get('description', '')
                 }
                 formatted_tasks.append(formatted_task)
             
             # Analyze the message with full context, including username in the message
+            print("\nAnalyzing question...")
             analysis = self.message_analyzer.analyze_question(
                 question=f"@{username}: {message}",
                 prior_messages=recent_messages,
@@ -1112,6 +1122,10 @@ class ScrumBot:
             self.driver.users.get_user(member['user_id'])['username']
             for member in members
         ]
+        # Store member usernames in channel info
+        if channel_id not in self.channels:
+            self.channels[channel_id] = {}
+        self.channels[channel_id]['member_usernames'] = member_usernames
         
         # Get Jira project code from channel mappings
         channel_mappings = get_channel_mappings()
@@ -1776,7 +1790,7 @@ class ScrumBot:
                 root_id = post_data.get('root_id') or post_data.get('id')
                 self.driver.posts.create_post({
                     'channel_id': channel_id,
-                    'message': "Sorry, I encountered an error processing your question. Please try again.",
+                    'message': "Đại ca thông cảm, em đang ăn cơm, tí em trả lời sau nhé!.",
                     'root_id': root_id
                 })
             except Exception as e2:

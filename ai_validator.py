@@ -231,7 +231,6 @@ class AIValidator:
 
 Do not try to guess, since sometime user's question is the follow up of previous messages that you are not provided, in case you feel unsure, just output "other"
 
-Question: {question}
 
 Return a JSON response with this format:
 {{
@@ -242,8 +241,12 @@ Return a JSON response with this format:
 
 Important:
 - "other": Request for task update in Jira; Task creation/updates, request for checking their task and dicussion (example check all my task and disccussion) general questions, assignment changes, want to execute an action related to jira, has a specific question about specific task or team member's task  etc. example: update missing task for me, create a task,...
-- "project_status": When user specifically add for or mention "detailed report" of the project. Other wise, if they just ask about update task status, output as "other"
+- "project_status": When user specifically add for or mention "detailed report" of the project OR user mentioned "current project status" or something like "tình hình dự án hiện tại". Other wise, if they just ask you to do an action like update task status or talk about a very specific task, output as "other"
 - "reminder": Only output this when user specifically asked to be reminded about something at a specific time. User must actually say "remind me" or something like that.
+
+<User Question>
+{question}
+</User Question>
 """
             print(question_type_prompt)
             # Get question type analysis
@@ -259,8 +262,6 @@ Important:
             # If it's a reminder request with high confidence, handle it
             if question_type['type'] == 'reminder' and question_type['confidence'] > 0.9:
                 reminder_prompt = f"""Parse this reminder request and extract the details.
-
-Request: {question}
 
 Return a JSON response with this format:
 {{
@@ -426,7 +427,11 @@ Important:
 - Use professional PM terminology
 - Keep the report around 1000 words
 - Make it easy to read with bullet points and clear sections
-- Answer in the original request message language. The message of user that asked "{question}"
+- Answer in the original request message language. 
+<User Question>
+{question}
+</User Question>
+! The language that the report use must be the same as <User Question>. ex. if user asked in Vietnamese use Vietnamese to write the report
 """
 
                 # Get status report
@@ -447,12 +452,6 @@ Important:
                 # Continue with regular question analysis (context check and main prompt)
                 context_prompt = f"""Analyze if this question needs context from recent channel messages to be properly understood and answered.
 
-User's Question: {question}
-
-<Recent Channel Messages>
-{messages_text[:3000]}
-</Recent Channel Messages>
-
 Return a JSON response with this format:
 {{
     "needs_context": boolean,  // Whether recent messages provide important context
@@ -469,17 +468,26 @@ Important:
 - For task updates (status changes, estimates, etc.), context usually isn't needed
 - For questions referencing recent discussions or specific details mentioned earlier, context is important
 - If the question is self-contained (like "create a task for X" or "mark Y as done"), no context needed
+example of related message
+["@user: Please update task ABC-123 to done","@bot: So can I confirm, what actions have you taken to done this task?","@user: Yes for this problem, I solved it by... so I mark it as done"]
 If user asked to summarize messages or asked what recently happened in many channels:
 - Choose messages that raising a critical problem or issues in all channels
 - Choose messages that announce something important for the project or team
 - Choose message that some different user mentioned the asking user's username. For example if User's Question is "@userA: summarize my recent messages", then looks for messages from other user like "@userB: hey @userA, please help me...".  
 - Choose message that asking the asking user to do something
 - Summarize in a concise passage and recommended next steps
+
+
+<Recent Channel Messages>
+{messages_text[:3000]}
+</Recent Channel Messages>
+
+User's Question: {question}
 """
                 print(context_prompt)
                 # Get context analysis
                 context_completion = self.client.chat.completions.create(
-                    model="google/gemini-flash-1.5",
+                    model="google/gemini-2.5-pro-preview-03-25",
                     messages=[{"role": "user", "content": context_prompt}],
                     extra_headers=self.extra_headers
                 )
@@ -504,7 +512,8 @@ If user asked to summarize messages or asked what recently happened in many chan
                     f"  Assignee: {task['assignee']} ({task['assignee_display_name']})\n"
                     f"  Start Date: {task['start_date'].strftime('%Y-%m-%d') if task['start_date'] else 'Not set'}\n"
                     f"  End Date: {task['end_date'].strftime('%Y-%m-%d') if task['end_date'] else 'Not set'}\n"
-                    f"  Original Estimate: {task['original_estimate'] or 'Not set'}"
+                    f"  Original Estimate: {task['original_estimate'] or 'Not set'}\n"
+                    f"  Description: {task['description'] or 'Not set'}\n"
                     for task in active_tasks
                 ])
                 
@@ -520,33 +529,16 @@ If user asked to summarize messages or asked what recently happened in many chan
                 while i >0:
                     try:
                         # Main analysis prompt
-                        prompt = f"""Analyze this question and determine if it needs action (creating or updating tasks) or just information.
-
-        Today's Date: {today_str}
-
-        User Question: {question}
-
-        Context:
-        <Active Sprint Tasks>
-        {tasks_context}
-        </Active Sprint Tasks>
-
-        <Team Members>
-        {members_context}
-        </Team Members>
-        
-        <ChannelName and JiraProjectCode Mapping>
-        {get_channel_mappings()}
-        </ChannelName and JiraProjectCode Mapping>
-
-        <Recent Channel Messages>
-        {messages_context}
-        </Recent Channel Messages>
+                        prompt = f"""
+        <Instruction>
+        Analyze this question and determine if it needs action (creating or updating tasks) or just information)
 
         Determine if this needs:
         1. Just an informational response
         2. Creation of new tasks (either standalone tasks or stories with sub-tasks)
         3. Updates to existing tasks (including converting tasks to stories)
+        
+        DO NOT UPDATE TASK TO DONE IF YOU HAVEN'T ASKED USER FOR PROOF OF COMPLETION FIRST
 
         Important Task Creation Guidelines:
         1. If a task is complex or requires multiple steps, create it as a story with sub-tasks
@@ -623,7 +615,7 @@ If user asked to summarize messages or asked what recently happened in many chan
         Important:
         - Aware of the asking user's username in "User Question" to know who you are talking to and answer in their language, as well as giving them information related to them
         - Do not change time_estimates of tasks that has status Done
-        - Today's date is {today_str}, all start dates must be >= today
+        - If user asked to move a task to done, check for recent messages to see if the user indicated how the done it, and check the task description. Only move task to done if from PM perspective, user provided enough information to indicate task done according to task description
         - Look for keywords indicating task updates like "done", "complete", "finished", "move", "change", "update", "extend"
         - For status updates, user might say things like "I finished XXX-123" or "Moving XXX-123 to Done"
         - For date changes, look for "need more time", "extend deadline", "move the end date"
@@ -640,6 +632,35 @@ If user asked to summarize messages or asked what recently happened in many chan
         - Aware of user's whole username. Do not assume their firstname or lastname is the same mean they are the same. for example: "Anh Nguyen" and "Viet Anh Nguyen" are 2 different person
         - If user asked for message summarization, no action needed, just summarize <Recent Channel Messages> in a concise summary passage and recommended next steps.
         - When you are asked a question, please answer it fully in the 'response' field, don't cut off the answer to the 'reasoning' field
+        
+        </Instruction>
+        <Input>
+        Today's Date: {today_str}
+
+        Context:
+        <Active Sprint Tasks>
+        {active_tasks}
+        </Active Sprint Tasks>
+
+        <Team Members>
+        {members_context}
+        </Team Members>
+        
+        <ChannelName and JiraProjectCode Mapping>
+        {get_channel_mappings()}
+        </ChannelName and JiraProjectCode Mapping>
+        ! Channel name can be used as the project name to provide context
+
+        <Recent Channel Messages>
+        {messages_context}
+        </Recent Channel Messages>
+        ! USE THIS AS THE CONVERSATION CONTEXT ONLY USER'S MESSAGE IS BELOW
+        <User Question>
+        {question}
+        </User Question>
+        !GIVE ANSWER USING THE SAME LANGUAGE AS THE USER'S QUESTION
+        !DO NOT UPDATE TASK TO DONE IF YOU HAVEN'T ASKED USER FOR PROOF OF COMPLETION FIRST
+        </Input>
         """
                         print(prompt)
                         # Get main analysis

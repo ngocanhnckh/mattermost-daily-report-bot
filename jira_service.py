@@ -745,7 +745,8 @@ Example response format:
                     'assignee_display_name': assignee_display_name,
                     'original_estimate': original_estimate,
                     'url': f"{JIRA_URL}/browse/{issue.key}",
-                    'updated': updated
+                    'updated': updated,
+                    'description': issue.fields.description
                 }
                 tasks.append(task)
                 print(
