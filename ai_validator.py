@@ -382,34 +382,34 @@ Today's Date: {today.strftime('%Y-%m-%d')}
 Based on this data, generate a detailed project status report that includes:
 
 1. Project Overview
-   - Task distribution and completion rates (no need to mention each task, just mention the porpotion of tasks in each status)
-   - Key metrics and trends
+   - Task distribution and completion rates: How many % is done, to do, in progress
+   - Key metrics and trends: be very specific
    - Overall project health assessment
 
 2. Timeline Analysis
-   - Progress tracking
-   - Deadline compliance
-   - Risk identification
-   - Blockers and dependencies
+   - Progress tracking: How many % of project is completed in the currnet sprint?
+   - Deadline compliance: How many % of tasks are completed on time?
+   - Risk identification: What are the specific risks? Show examples?
+   - Blockers and dependencies: What are the specific blockers? Show examples?
 
 3. Team Performance
    - Workload distribution (calculate workload hours against timeline start date end date of each member as well, assuming 1 member can load 4 hours of work per day in average)
-   - Resource utilization
-   - Capacity analysis
-   - Individual performance metrics
+   - Resource utilization: How many % of team members are working on tasks?
+   - Capacity analysis: Are there any overloaded memeber? (total tasks > 40 hours in that week, using hour estimate data and start date end date)
+   - Individual performance metrics: What is the performance of each member in the team (Good, Average, Bad)? What are task completion rate of each member, how many late for deadline tasks they have? And what should we do with them?
 
 4. Risk Assessment
-   - Overdue tasks
-   - Upcoming deadlines
-   - Resource constraints
-   - Technical challenges
-   - Mitigation strategies
+   - Overdue tasks: How many tasks are overdue?
+   - Upcoming deadlines: How many tasks have upcoming deadlines?
+   - Resource constraints: Are there any resource constraints?
+   - Technical challenges: What are the specific technical challenges?
+   - Mitigation strategies: What are the specific mitigation strategies?
 
 5. Recommendations
-   - Priority adjustments
-   - Resource reallocation
-   - Process improvements
-   - Immediate actions needed
+   - Priority adjustments: What are the specific priority adjustments?
+   - Resource reallocation: What are the specific resource reallocations?
+   - Process improvements: What are the specific process improvements?
+   - Immediate actions needed: What are the specific immediate actions needed?
    - Any tasks updates (assignee, status, estimate, start date, end date) or task creation needed?
 
 Format the report professionally with:
@@ -428,6 +428,7 @@ Important:
 - Keep the report around 1000 words
 - Make it easy to read with bullet points and clear sections
 - Answer in the original request message language. 
+- Everything must be backed up with numbers or proof/example (ex. Task VIN-123 has the deadline 11/1/2025 but today still not done) in the given data
 <User Question>
 {question}
 </User Question>
@@ -552,12 +553,43 @@ User's Question: {question}
         - The original task should be deleted
         - A new story should replace it
         - Break down the work into appropriate sub-tasks
+        6. Always confirm with user all the task before creating or updating
+        Example, if user just asked you to do something and you did not confirm, you should return
+        ```
+        {{
+            "needs_action": false,
+            "response": "Hi @user, do you want me to create the following tasks: \n Task 1: Create a tasks \n - Description: abc \n - Asignee: user1 \n - Start date: 2023-01-01 \n - End date: 2023-01-02 \n - Estimate: 8h",
+            "action_type": "info", 
+            "jira_project_code": "XXX"
+        }}
+        ```
+        If you see the <Recent Channel Messages> already confirm with the user and user agreed, then execute the action like:
+        ```
+        {{
+            "needs_action": true,
+            "response": "Yes sir! I'm executing the action",
+            "action_type": "create",
+            "jira_project_code": "XXX",
+            "tasks": [  
+                {{
+                    "type": "task",
+                    "title": "Create a tasks,
+                    "assignee": "user1",
+                    "start_date": "2023-01-01",
+                    "end_date": "2023-01-02",
+                    "estimate": "8h",
+                    "description": "abc",
+                }}
+            ]
+        }}
+        ```
 
-        Return a JSON response with this format:
+
+        ## Here is our standard json format that you must follow, output the json only:
         {{
             "needs_action": boolean,
             "response": "Clear response to the user's question",
-            "action_type": "create" | "update" | "info",
+            "action_type": "create" | "update" | "info", // Always set to info if you are confirming action with the user
             "jira_project_code": "XXXX",
             "tasks": [  // Only include if needs_action is true and action_type is "create"
                 {{
@@ -659,7 +691,9 @@ User's Question: {question}
         {question}
         </User Question>
         !GIVE ANSWER USING THE SAME LANGUAGE AS THE USER'S QUESTION
-        !DO NOT UPDATE TASK TO DONE IF YOU HAVEN'T ASKED USER FOR PROOF OF COMPLETION FIRST
+        !DO NOT UPDATE TASK TO DONE IF YOU HAVEN'T ASKED USER FOR PROOF OF COMPLETION FIRST. SET action_type to "info" if you are just confirming to update task
+        !DO NOT CREATE TASKS BEFORE CONFIRMATION, CONFIRM WITH USER ALL THE TASKS THAT YOU ARE TRYING TO CREATE. SET action_type to "info" if you are just confirming to create task
+
         </Input>
         """
                         print(prompt)
@@ -673,6 +707,7 @@ User's Question: {question}
                         
                         response = completion.choices[0].message.content
                         cleaned_response = response.replace('```json', '').replace('```', '').strip()
+                        print(cleaned_response)
                         result = json.loads(cleaned_response)
                         
                         print("AI response:")

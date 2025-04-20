@@ -729,9 +729,16 @@ class ScrumBot:
                         
                         # Assignee update
                         if 'assignee' in update['fields']:
-                            print(f"Updating assignee to: {update['fields']['assignee']}")
-                            assignee_info = get_user_mappings().get(update['fields']['assignee'])
-                            update_dict['assignee'] = {'name': assignee_info['jira_username']}
+                            try:
+                                print(f"Updating assignee to: {update['fields']['assignee']}")
+                                assignee_info = get_user_mappings().get(update['fields']['assignee'])
+                                update_dict['assignee'] = {'name': assignee_info['jira_username']}
+                            except Exception as e:
+                                print(f"Updating assignee to: {update['fields']['assignee']}")
+                                
+                                update_dict['assignee'] = {'name': update['fields']['assignee']}
+                                print(f"Error updating assignee: {str(e)}")
+                                print(f"Full error: {traceback.format_exc()}")
                             
                         
                         # Apply updates if any
@@ -787,11 +794,11 @@ class ScrumBot:
                     response += f"  • Updated fields: {changes}\n"
                     response += f"  • Reason: {task['reason']}\n"
         
-        if analysis.get('reasoning'):
-            print("\nAdding reasoning to response...")
-            response += "\n------------------------\n *Reasoning:*\n"
-            for aspect, explanation in analysis['reasoning'].items():
-                response += f"- {aspect.replace('_', ' ').title()}: {explanation}\n"
+        # if analysis.get('reasoning'):
+        #     print("\nAdding reasoning to response...")
+        #     response += "\n------------------------\n *Reasoning:*\n"
+        #     for aspect, explanation in analysis['reasoning'].items():
+        #         response += f"- {aspect.replace('_', ' ').title()}: {explanation}\n"
         
         print("\nTask actions completed successfully")
         return response, created_tasks, updated_tasks
