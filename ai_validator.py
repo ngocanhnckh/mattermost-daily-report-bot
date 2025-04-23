@@ -593,7 +593,7 @@ User's Question: {question}
             "jira_project_code": "XXXX",
             "tasks": [  // Only include if needs_action is true and action_type is "create"
                 {{
-                    "type": "story" | "task",  // Whether this is a story or standalone task
+                    "type": "story" | "task" | "bug",  // Whether this is a story or standalone task
                     "title": "Clear task title",
                     "assignee": "username",
                     "start_date": "YYYY-MM-DD",
