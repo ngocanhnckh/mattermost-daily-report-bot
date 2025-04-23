@@ -554,7 +554,7 @@ User's Question: {question}
         - A new story should replace it
         - Break down the work into appropriate sub-tasks
         6. Always confirm with user all the task before creating or updating
-        Example, if user just asked you to do something and you did not confirm, you should return
+        Example, if user just asked you to do something and you did not confirm, you should return (this is just example, in reality you may create more than 2 tasks depends on the situation)
         ```
         {{
             "needs_action": false,
@@ -664,7 +664,7 @@ User's Question: {question}
         - Aware of user's whole username. Do not assume their firstname or lastname is the same mean they are the same. for example: "Anh Nguyen" and "Viet Anh Nguyen" are 2 different person
         - If user asked for message summarization, no action needed, just summarize <Recent Channel Messages> in a concise summary passage and recommended next steps.
         - When you are asked a question, please answer it fully in the 'response' field, don't cut off the answer to the 'reasoning' field
-        
+        - One task only have 1 responsible assignee, do not assign multiple people to a single task
         </Instruction>
         <Input>
         Today's Date: {today_str}
