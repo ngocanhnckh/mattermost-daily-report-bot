@@ -480,7 +480,7 @@ If user asked to summarize messages or asked what recently happened in many chan
 
 
 <Recent Channel Messages>
-{messages_text[:3000]}
+{messages_text}
 </Recent Channel Messages>
 
 User's Question: {question}
