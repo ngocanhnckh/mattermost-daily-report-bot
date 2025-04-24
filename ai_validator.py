@@ -382,6 +382,7 @@ Today's Date: {today.strftime('%Y-%m-%d')}
 Based on this data, generate a detailed project status report that includes:
 
 1. Project Overview
+   - Read all the summary of the tasks and give a short summary paragraph of what the team is trying to achieve
    - Task distribution and completion rates: How many % is done, to do, in progress
    - Key metrics and trends: be very specific
    - Overall project health assessment
@@ -428,7 +429,8 @@ Important:
 - Keep the report around 1000 words
 - Make it easy to read with bullet points and clear sections
 - Answer in the original request message language. 
-- Everything must be backed up with numbers or proof/example (ex. Task VIN-123 has the deadline 11/1/2025 but today still not done) in the given data
+- Everything must be backed up with numbers or proof/example (ex. "Task VIN-123: Get it done" has the deadline 11/1/2025 but today still not done) in the given data
+- When you mention a task, you must also include the task's title or summary. Don't just give the task code
 <User Question>
 {question}
 </User Question>

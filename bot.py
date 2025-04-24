@@ -524,16 +524,24 @@ class ScrumBot:
                     else:
                         assignee_username = assignee_info['jira_username']
                         
+                    task_type = task['type']
+                    if task_type == 'bug':
+                        task_type = 'Bug'
+                    elif task_type == 'story':
+                        task_type = 'Story'
+                    elif task_type == 'task':
+                        task_type = 'Task'
+                    
                     # Determine if this is a story or regular task
-                    is_story = task['type'] == 'story'
-                    print(f"Task type: {'Story' if is_story else 'Task'}")
+                    is_story = task_type == 'Story'
+                    print(f"Task type: {'Story' if is_story else task_type}")
                     
                     # Create issue in Jira
                     issue_dict = {
                         'project': {'key': project_code},
                         'summary': task['title'],
                         'description': task['description'],
-                        'issuetype': {'name': 'Story' if is_story else 'Task'},
+                        'issuetype': {'name': task_type},
                         'assignee': {'name': assignee_username},
                         self.jira_service.start_date_field: task['start_date'],
                         self.jira_service.end_date_field: task['end_date'],
@@ -557,7 +565,7 @@ class ScrumBot:
                         'url': f"{JIRA_URL}/browse/{new_issue.key}",
                         'assignee': task['assignee'],
                         'title': task['title'],
-                        'type': task['type'],
+                        'type': task_type,
                         'sub_tasks': []
                     }
                     
