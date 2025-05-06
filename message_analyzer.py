@@ -48,7 +48,7 @@ class MessageAnalyzer(AIValidator):
             # Format messages context
             messages_context = "\n".join(messages) if messages else "No messages found"
             
-            currentDate = datetime.now().strftime("%Y-%m-%d")
+            currentDate = datetime.datetime.now().strftime("%Y-%m-%d")
             
             prompt = f"""Generate a daily report for user {username} based on their recent activities.
             Today's date: {currentDate}
