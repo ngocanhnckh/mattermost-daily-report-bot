@@ -647,6 +647,7 @@ User's Question: {question}
         }}
 
         Important:
+        - All tasks must have assignee, even if it's a story and there are sub-tasks below it, just take the project manager or the leader as the asignee of the story
         - Aware of the asking user's username in "User Question" to know who you are talking to and answer in their language, as well as giving them information related to them
         - Do not change time_estimates of tasks that has status Done
         - If user asked to move a task to done, check for recent messages to see if the user indicated how the done it, and check the task description. Only move task to done if from PM perspective, user provided enough information to indicate task done according to task description
