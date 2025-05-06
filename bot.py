@@ -22,6 +22,10 @@ from jira_service import JiraService
 from message_analyzer import MessageAnalyzer
 from twilio_service import TwilioService
 from typing import List, Dict
+import os
+import requests
+import mimetypes
+import textract
 
 class ScrumBot:
     def __init__(self):
@@ -468,6 +472,7 @@ class ScrumBot:
                                 await self._handle_dm(post_data)
                             # Check if bot is mentioned
                             elif f'@{BOT_USERNAME}' in post_data['message']:
+                                print("Bot mentioned")
                                 await self._handle_bot_mention(post_data)
                             elif post_data.get('root_id'):  # This is a reply in a thread
                                 self._handle_report_reply(post_data)
@@ -1650,6 +1655,8 @@ class ScrumBot:
             print(f"Channel ID: {channel_id}")
             print(f"User ID: {user_id}")
             print(f"Message: {message}")
+
+            
             
             # Get channel info
             channel_info = self.channels.get(channel_id, {})
@@ -1715,11 +1722,61 @@ class ScrumBot:
                 if member not in get_excluded_users() and member != BOT_USERNAME
             }
             print(f"\nChannel members: {len(channel_members)}")
-            
+
+            context_text=""
+            try:
+                print("\nProcessing files...")
+                file_ids = post_data.get('file_ids', [])
+                files_metadata = post_data.get('metadata', {}).get('files', [])
+                extracted_texts = []
+                print(f"Found {len(file_ids)} files")
+
+                if file_ids:  # Only process if there are files attached!
+                    MATTERMOST_URL = os.getenv("SITE_URL")
+                    BOT_TOKEN = os.getenv("BOT_TOKEN")
+                    if not MATTERMOST_URL.startswith("http://") and not MATTERMOST_URL.startswith("https://"):
+                        MATTERMOST_URL = "http://" + MATTERMOST_URL  # or "https://" if your server uses SSL
+                    print("Files attached!")
+                    def download_file(file_id, file_name):
+                        url = f"{MATTERMOST_URL}/api/v4/files/{file_id}"
+                        headers = {"Authorization": f"Bearer {BOT_TOKEN}"}
+                        response = requests.get(url, headers=headers)
+                        if response.status_code == 200:
+                            save_path = f"/tmp/{file_name}"
+                            with open(save_path, "wb") as f:
+                                f.write(response.content)
+                            return save_path
+                        return None
+
+                    for idx, file_id in enumerate(file_ids):
+                        file_name = files_metadata[idx]['name'] if idx < len(files_metadata) else f"{file_id}"
+                        file_path = download_file(file_id, file_name)
+                        if file_path:
+                            mime_type, _ = mimetypes.guess_type(file_path)
+                            if mime_type and (mime_type.startswith('image/') or mime_type.startswith('video/')):
+                                continue  # Skip media files
+                            try:
+                                text = textract.process(file_path).decode('utf-8')
+                                extracted_texts.append(text)
+                            except Exception as e:
+                                print(f"Failed to extract text: {e}")
+                            os.remove(file_path)
+
+                # Combine all extracted texts (if any)
+                context_text = "\n\n".join(extracted_texts) if extracted_texts else ""
+            except Exception as e:
+                print(f"Failed to extract text: {e}")
+                context_text = ""
+
+            if context_text:
+                message += f"@{username}: {message}" + "\n File content: \n ```\n" + context_text + "\n```"
+            else:
+                message = f"@{username}: {message}"
+
             # Analyze the question with username in the message
             print("\nAnalyzing question...")
             analysis = self.ai_validator.analyze_question(
-                f"@{username}: {message}",
+                message,
                 prior_messages,
                 active_tasks,
                 channel_members

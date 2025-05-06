@@ -472,6 +472,7 @@ Important:
 - For questions referencing recent discussions or specific details mentioned earlier, context is important
 - If the question is self-contained (like "create a task for X" or "mark Y as done"), no context needed
 example of related message
+- If user is confirming a task creation (ex. "please create", "i confirm", "please do", "tạo đi", "ok", "đúng rồi"), look for messages that listed the tasks that you are confirming with the user
 ["@user: Please update task ABC-123 to done","@bot: So can I confirm, what actions have you taken to done this task?","@user: Yes for this problem, I solved it by... so I mark it as done"]
 If user asked to summarize messages or asked what recently happened in many channels:
 - Choose messages that raising a critical problem or issues in all channels
@@ -668,6 +669,7 @@ User's Question: {question}
         - If user asked for message summarization, no action needed, just summarize <Recent Channel Messages> in a concise summary passage and recommended next steps.
         - When you are asked a question, please answer it fully in the 'response' field, don't cut off the answer to the 'reasoning' field
         - One task only have 1 responsible assignee, do not assign multiple people to a single task
+        - If user sent a file but said nothing, then summarize it in your answer
         </Instruction>
         <Input>
         Today's Date: {today_str}
