@@ -500,6 +500,8 @@ User's Question: {question}
                 )
                 
                 context_response = context_completion.choices[0].message.content
+                print("Context response:")
+                print(context_response)
                 context_analysis = json.loads(context_response.replace('```json', '').replace('```', '').strip())
                 
                 print("Context analysis:")
