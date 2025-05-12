@@ -229,29 +229,29 @@ class AIValidator:
             # First, determine the type of question
             question_type_prompt = f"""Determine if this question is asking for general project action, info or a detailed project report or a reminder request
 
-Do not try to guess, since sometime user's question is the follow up of previous messages that you are not provided, in case you feel unsure, just output "other"
+            Do not try to guess, since sometime user's question is the follow up of previous messages that you are not provided, in case you feel unsure, just output "other"
 
 
-Return a JSON response with this format:
-{{
-    "type": "project_status" | "reminder" | "other",  // Type of question
-    "confidence": float,  // How confident in this classification (0-1)
-    "reason": "Explanation of why this is classified this way"
-}}
+            Return a JSON response with this format:
+            {{
+                "type": "project_status" | "reminder" | "other",  // Type of question
+                "confidence": float,  // How confident in this classification (0-1)
+                "reason": "Explanation of why this is classified this way"
+            }}
 
-Important:
-- "other": Request for task update in Jira; Task creation/updates, request for checking their task and dicussion (example check all my task and disccussion) general questions, assignment changes, want to execute an action related to jira, has a specific question about specific task or team member's task  etc. example: update missing task for me, create a task,...
-- "project_status": When user specifically add for or mention "detailed report" of the project OR user mentioned "current project status" or something like "tình hình dự án hiện tại". Other wise, if they just ask you to do an action like update task status or talk about a very specific task, output as "other"
-- "reminder": Only output this when user specifically asked to be reminded about something at a specific time. User must actually say "remind me" or something like that.
+            Important:
+            - "other": Request for task update in Jira; Task creation/updates, request for checking their task and dicussion (example check all my task and disccussion) general questions, assignment changes, want to execute an action related to jira, has a specific question about specific task or team member's task  etc. example: update missing task for me, create a task,...
+            - "project_status": When user specifically add for or mention "detailed report" of the project OR user mentioned "current project status" or something like "tình hình dự án hiện tại". Other wise, if they just ask you to do an action like update task status or talk about a very specific task, output as "other"
+            - "reminder": Only output this when user specifically asked to be reminded about something at a specific time. User must actually say "remind me" or something like that.
 
-<User Question>
-{question}
-</User Question>
-"""
+            <User Question>
+            {question}
+            </User Question>
+            """
             print(question_type_prompt)
             # Get question type analysis
             type_completion = self.client.chat.completions.create(
-                model="google/gemini-flash-1.5",
+                model="openai/gpt-4.1",
                 messages=[{"role": "user", "content": [{"type": "text", "text": question_type_prompt}]}]
             )
             print("Type completion:")
@@ -263,28 +263,29 @@ Important:
             if question_type['type'] == 'reminder' and question_type['confidence'] > 0.9:
                 reminder_prompt = f"""Parse this reminder request and extract the details.
 
-Return a JSON response with this format:
-{{
-    "parsed_time": {{
-        "original": "the original time expression",
-        "iso_time": "YYYY-MM-DD HH:MM:SS+HH:MM"
-    }},
-    "message": "What to remind about",
-    "target_user": "username who should be reminded",
-    "confidence": float  // How confident in the parsing (0-1)
-}}
+                Return a JSON response with this format:
+                {{
+                    "parsed_time": {{
+                        "original": "the original time expression",
+                        "iso_time": "YYYY-MM-DD HH:MM:SS+HH:MM"
+                    }},
+                    "message": "What to remind about",
+                    "target_user": "username who should be reminded",
+                    "confidence": float  // How confident in the parsing (0-1)
+                }}
 
-Important:
-- Parse relative times ("in 2 hours") and specific times ("at 5pm tomorrow")
-- Extract a clear message about what the reminder is for
-- If no specific user is mentioned, use the original requester
-- Today's date is {datetime.now(TIMEZONE).strftime('%Y-%m-%d')}
-- Use 24-hour format for times
-- Always include timezone offset in iso_time
-- If time is ambiguous, set confidence lower"""
+                Important:
+                - Parse relative times ("in 2 hours") and specific times ("at 5pm tomorrow")
+                - Extract a clear message about what the reminder is for
+                - If no specific user is mentioned, use the original requester
+                - Today's date is {datetime.now(TIMEZONE).strftime('%Y-%m-%d')}
+                - Use 24-hour format for times
+                - Always include timezone offset in iso_time
+                - Give answer in the JSON format I sent you only
+                - If time is ambiguous, set confidence lower"""
 
                 reminder_completion = self.client.chat.completions.create(
-                    model="google/gemini-flash-1.5",
+                    model="openai/gpt-4.1",
                     messages=[{"role": "user", "content": reminder_prompt}],
                     extra_headers=self.extra_headers
                 )

@@ -236,6 +236,11 @@ class ScrumBot:
                     
                     # Check each member who hasn't reported
                     for member in members:
+                        active_tasks = self.jira_service.get_user_active_tasks(jira_username, jira_project)
+                        if not active_tasks:
+                            print(f"User {member} has no active tasks, skipping AI report")
+                            continue
+                        
                         if member in reported_users:
                             print(f"User {member} has already reported, skipping")
                             continue
@@ -733,6 +738,11 @@ class ScrumBot:
                                     print(f"Status updated successfully for {issue.key}")
                                     break
                         
+                        # Description update
+                        if 'description' in update['fields']:
+                            print(f"Updating description to: {update['fields']['description']}")
+                            update_dict['description'] = update['fields']['description']
+
                         # End date update
                         if 'end_date' in update['fields']:
                             print(f"Updating end date to: {update['fields']['end_date']}")
