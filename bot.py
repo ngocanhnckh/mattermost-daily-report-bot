@@ -136,8 +136,14 @@ class ScrumBot:
         scheduler_thread.start()
         print("Scheduler thread started")
 
-        # Keep your existing WebSocket initialization
-        self.driver.init_websocket(self._handle_websocket_event)
+        # WebSocket auto-reconnect loop
+        while True:
+            try:
+                print("Attempting to start WebSocket...")
+                self.driver.init_websocket(self._handle_websocket_event)
+            except Exception as e:
+                logging.exception("WebSocket crashed, retrying in 5 seconds...")
+                time.sleep(5)
 
     def _run_scheduler(self):
         print("\nScheduler thread starting...")
@@ -908,7 +914,12 @@ class ScrumBot:
             await self._send_dm(user_id, "I encountered an error processing your message. Please try again.")
 
     async def _send_dm(self, user_id: str, message: str):
-        """Send a direct message to a user."""
+        """Send a direct message to a user.
+        
+        Args:
+            user_id (str): The ID of the user to send the message to.
+            message (str): The message content to be sent.
+        """
         try:
             # Create DM channel first
             dm_channel = self.driver.channels.create_direct_message_channel([self.bot_id, user_id])

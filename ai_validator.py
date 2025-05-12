@@ -444,6 +444,8 @@ Important:
                     messages=[{"role": "user", "content": status_prompt}],
                     extra_headers=self.extra_headers
                 )
+
+                print(status_completion)
                 
                 return {
                     "needs_action": False,
@@ -491,7 +493,7 @@ User's Question: {question}
                 print(context_prompt)
                 # Get context analysis
                 context_completion = self.client.chat.completions.create(
-                    model="google/gemini-2.5-pro-preview-03-25",
+                    model="openai/gpt-4.1",
                     messages=[{"role": "user", "content": context_prompt}],
                     extra_headers=self.extra_headers
                 )
