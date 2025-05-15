@@ -236,6 +236,14 @@ class ScrumBot:
                     
                     # Check each member who hasn't reported
                     for member in members:
+                        user_info = get_user_mappings().get(member, {})
+                        jira_username = user_info.get('jira_username', member)
+                        jira_project = channel_info.get('jira_project')
+                        
+                        if not jira_project:
+                            print(f"No Jira project found for channel {channel_name}")
+                            continue
+                            
                         active_tasks = self.jira_service.get_user_active_tasks(jira_username, jira_project)
                         if not active_tasks:
                             print(f"User {member} has no active tasks, skipping AI report")
