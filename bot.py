@@ -322,6 +322,36 @@ class ScrumBot:
             print(f"Reminder start time: {reminder_start_time}")
             print(f"Current time: {current_time}")
             print(f"Time difference: {current_time - reminder_start_time}")
+
+            # Check custom reminders (new section)
+            print("\nChecking custom reminders...")
+            for channel_id, reminders in self.pending_reminders.items():
+                for username, reminder_info in list(reminders.items()):  # Use list to avoid modification during iteration
+                    # Skip if this is not a custom reminder
+                    if not isinstance(reminder_info, dict) or 'time' not in reminder_info:
+                        continue
+                        
+                    reminder_time = reminder_info['time']
+                    # Compare only hours and minutes
+                    current_hm = current_time.replace(second=0, microsecond=0)
+                    if current_hm >= reminder_time:
+                        print(f"Sending custom reminder to {username}")
+                        try:
+                            # Create or get DM channel
+                            user = self.driver.users.get_user_by_username(username)
+                            dm_channel = self.driver.channels.create_direct_message_channel([self.bot_id, user['id']])
+                            
+                            # Send the reminder
+                            self.driver.posts.create_post({
+                                'channel_id': dm_channel['id'],
+                                'message': f"🔔 **Reminder**: {reminder_info['message']}"
+                            })
+                            
+                            # Remove the reminder after sending
+                            del reminders[username]
+                            print(f"Reminder sent and removed for {username}")
+                        except Exception as e:
+                            print(f"Error sending custom reminder to {username}: {e}")
             
             # If current time is before reminder start time, skip reminders
             if current_time < reminder_start_time:
@@ -330,6 +360,8 @@ class ScrumBot:
                 
             print(f"Current time {current_time} is after reminder start time {reminder_start_time}, proceeding with reminders")
             
+            
+
             # Check each channel
             for channel_id, channel_info in self.channels.items():
                 channel_name = channel_info.get('name', '')
@@ -383,38 +415,7 @@ class ScrumBot:
                     # Update the last reminder time
                     self.pending_reminders[channel_id][member] = current_time
             
-            # Check custom reminders (new section)
-            print("\nChecking custom reminders...")
-            for channel_id, reminders in self.pending_reminders.items():
-                for username, reminder_info in list(reminders.items()):  # Use list to avoid modification during iteration
-                    # Skip if this is not a custom reminder
-                    if not isinstance(reminder_info, dict) or 'time' not in reminder_info:
-                        continue
-                        
-                    reminder_time = reminder_info['time']
-                    # Compare only hours and minutes
-                    current_hm = current_time.replace(second=0, microsecond=0)
-                    reminder_hm = reminder_time.replace(second=0, microsecond=0)
-                    
-                    if current_hm >= reminder_hm:
-                        print(f"Sending custom reminder to {username}")
-                        try:
-                            # Create or get DM channel
-                            user = self.driver.users.get_user_by_username(username)
-                            dm_channel = self.driver.channels.create_direct_message_channel([self.bot_id, user['id']])
-                            
-                            # Send the reminder
-                            self.driver.posts.create_post({
-                                'channel_id': dm_channel['id'],
-                                'message': f"🔔 **Reminder**: {reminder_info['message']}"
-                            })
-                            
-                            # Remove the reminder after sending
-                            del reminders[username]
-                            print(f"Reminder sent and removed for {username}")
-                        except Exception as e:
-                            print(f"Error sending custom reminder to {username}: {e}")
-                            print(traceback.format_exc())
+            
                             
         except Exception as e:
             print(f"Error in _check_reminders: {e}")
@@ -1840,7 +1841,10 @@ class ScrumBot:
                             'message': analysis['response'],
                             'root_id': root_id
                         })
-                        print(f"Reminder confirmation sent to {target_username}")
+
+                        print(f"≈ {target_username}")
+
+                        return
                         
                 elif project_code:  # Handle other actions only if project code exists
                     print("\nHandling task actions...")

@@ -263,6 +263,8 @@ class AIValidator:
             if question_type['type'] == 'reminder' and question_type['confidence'] > 0.9:
                 reminder_prompt = f"""Parse this reminder request and extract the details.
 
+                User request: {question}
+
                 Return a JSON response with this format:
                 {{
                     "parsed_time": {{
@@ -270,7 +272,7 @@ class AIValidator:
                         "iso_time": "YYYY-MM-DD HH:MM:SS+HH:MM"
                     }},
                     "message": "What to remind about",
-                    "target_user": "username who should be reminded",
+                    "target_user": "username who should be reminded. if the sender told you to reminder someone else, this field must be the username of that person",
                     "confidence": float  // How confident in the parsing (0-1)
                 }}
 
@@ -283,7 +285,7 @@ class AIValidator:
                 - Always include timezone offset in iso_time
                 - Give answer in the JSON format I sent you only
                 - If time is ambiguous, set confidence lower"""
-
+                print(reminder_prompt)
                 reminder_completion = self.client.chat.completions.create(
                     model="openai/gpt-4.1",
                     messages=[{"role": "user", "content": reminder_prompt}],
@@ -331,7 +333,7 @@ class AIValidator:
                     return {
                         "needs_action": True,
                         "action_type": "reminder",
-                        "response": f"I'll remind {reminder_details['target_user']} about this at {reminder_details['parsed_time']['original']}! 🔔",
+                        "response": f":white_check_mark: {reminder_details['parsed_time']['original']}! 🔔",
                         "reminder": {
                             "time": reminder_time.isoformat(),  # This will include timezone info
                             "message": reminder_details['message'],
@@ -469,14 +471,14 @@ Return a JSON response with this format:
 }}
 
 Important:
+- If user is confirming a task action (ex. "please create", "i confirm", "please do", "tạo đi", "ok", "đúng rồi"), look for the latest message that listed the tasks that you are confirming with the user
+["@user: Please update task ABC-123 to done","@bot: So can I confirm, what actions have you taken to done this task?","@user: Yes for this problem, I solved it by... so I mark it as done"]
 - If you see consecutive messages that potentially related to the question, mark as needing context
 - Only mark as needing context if the recent messages contain information crucial to understanding or answering the question
 - For task updates (status changes, estimates, etc.), context usually isn't needed
 - For questions referencing recent discussions or specific details mentioned earlier, context is important
 - If the question is self-contained (like "create a task for X" or "mark Y as done"), no context needed
 example of related message
-- If user is confirming a task creation (ex. "please create", "i confirm", "please do", "tạo đi", "ok", "đúng rồi"), look for messages that listed the tasks that you are confirming with the user
-["@user: Please update task ABC-123 to done","@bot: So can I confirm, what actions have you taken to done this task?","@user: Yes for this problem, I solved it by... so I mark it as done"]
 If user asked to summarize messages or asked what recently happened in many channels:
 - Choose messages that raising a critical problem or issues in all channels
 - Choose messages that announce something important for the project or team
@@ -611,7 +613,7 @@ User's Question: {question}
                     "sub_tasks": [  // Only include for stories
                         {{
                             "title": "Sub-task title",
-                            "assignee": "username",
+                            "assignee": "username", // Never have more than 1 assignee
                             "start_date": "YYYY-MM-DD",
                             "end_date": "YYYY-MM-DD",
                             "estimate": "Xh",
