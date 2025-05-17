@@ -703,7 +703,7 @@ User's Question: {question}
         {question}
         </User Question>
         !GIVE ANSWER USING THE SAME LANGUAGE AS THE USER'S QUESTION
-        !DO NOT UPDATE TASK TO DONE IF YOU HAVEN'T ASKED USER FOR PROOF OF COMPLETION FIRST. SET action_type to "info" if you are just confirming to update task
+        !DO NOT UPDATE TASK TO DONE IF YOU HAVEN'T ASKED USER FOR PROOF OF COMPLETION FIRST. SET action_type to "info" if you are just confirming to update task.
         !DO NOT CREATE TASKS BEFORE CONFIRMATION, CONFIRM WITH USER ALL THE TASKS THAT YOU ARE TRYING TO CREATE. SET action_type to "info" if you are just confirming to create task
         !WHEN USER ALREADY SAID SOMETHING LIKE "yes"/"tạo đi", "xác nhận"/"confirm"... and the recent messages show that you sent them a list of task, then that's a confirm, create the tasks!
         </Input>

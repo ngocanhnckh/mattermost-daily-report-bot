@@ -1354,7 +1354,7 @@ class ScrumBot:
 
                     if user_tasks:  # Only tag users with active tasks
                         tagged_users.append(member)
-                        user_mention = f"@{member}"
+                        user_mention = f"{member}"
                         task_mentions = []
                         
                         # Start user section
@@ -1452,7 +1452,7 @@ class ScrumBot:
             message = (
                 f"## 🔔 **Daily Scrum Report for {date_str}**\n\n"
                 f"{DAILY_REPORT_MESSAGE}"
-                f"Good morning {' '.join(f'@{user}' for user in tagged_users)}! "
+                f"Good morning {' '.join(f'{user}' for user in tagged_users)}! "
                 f"Here are your tasks and suggested focus for today:\n\n"
             )
             
@@ -1721,14 +1721,14 @@ class ScrumBot:
             for post in sorted(posts['posts'].values(), key=lambda x: x['create_at'], reverse=True):
                 if post['id'] != post_data['id']:  # Skip the current message
                     # For thread replies, only include messages from the same thread
-                    # if is_thread_reply:
-                    #     if post.get('root_id') == post_data['root_id'] or post['id'] == post_data['root_id']:
-                    #         user = self.driver.users.get_user(post['user_id'])['username']
-                    #         prior_messages.append(f"@{user}: {post['message']}")
-                    # else:
-                    # For root messages, include all messages
-                    user = self.driver.users.get_user(post['user_id'])['username']
-                    prior_messages.append(f"@{user}: {post['message']}")
+                    if is_thread_reply:
+                        if post.get('root_id') == post_data['root_id'] or post['id'] == post_data['root_id']:
+                            user = self.driver.users.get_user(post['user_id'])['username']
+                            prior_messages.append(f"@{user}: {post['message']}")
+                    else:
+                        # For root messages, include all messages
+                        user = self.driver.users.get_user(post['user_id'])['username']
+                        prior_messages.append(f"@{user}: {post['message']}")
                         
                 # Limit to x messages
                 if len(prior_messages) >= 30:
@@ -1800,6 +1800,9 @@ class ScrumBot:
                 message += f"@{username}: {message}" + "\n File content: \n ```\n" + context_text + "\n```"
             else:
                 message = f"@{username}: {message}"
+
+            if is_thread_reply:
+                message += "\n\n Note: This message sent in a thread reply, if user asking you to search for some information or messages and you seems cannot find it, warn them that you can only access the messages in this thread. If they need to search for other messages, please go outside of the thread reply and send message in the main channel. (if you are using Vietnamese, you can say: Tôi chỉ có thể đọc tin nhắn phản hồi trong thread này, vui lòng nhắn ra ngoài thread để truy cập tới tin nhắn của toàn bộ kênh.)"
 
             # Analyze the question with username in the message
             print("\nAnalyzing question...")
