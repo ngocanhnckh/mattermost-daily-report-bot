@@ -44,6 +44,17 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+             # Add reminders table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS reminders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    reminder_time TEXT NOT NULL,  -- ISO format string
+                    message TEXT NOT NULL
+                )
+            ''')
             conn.commit()
 
     def add_report(self, channel_id, channel_name, username, message, is_ai_generated=False):
@@ -88,6 +99,34 @@ class Database:
                 WHERE channel_id = ? AND report_date = ?
             ''', (channel_id, today))
             return [row[0] for row in cursor.fetchall()]
+
+    def add_reminder(self, channel_id, username, reminder_time, message):
+        """Add a custom reminder to the database."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO reminders (channel_id, username, reminder_time, message)
+                VALUES (?, ?, ?, ?)
+            ''', (channel_id, username, reminder_time, message))
+            conn.commit()
+
+    def get_due_reminders(self, now_iso):
+        """Fetch reminders that are due (reminder_time <= now)."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, channel_id, username, reminder_time, message
+                FROM reminders
+                WHERE reminder_time <= ?
+            ''', (now_iso,))
+            return cursor.fetchall()
+
+    def remove_reminder(self, reminder_id):
+        """Remove a reminder after it is sent."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM reminders WHERE id = ?', (reminder_id,))
+            conn.commit()
 
     def has_reported_today(self, channel_id, username):
         with sqlite3.connect(self.db_path) as conn:

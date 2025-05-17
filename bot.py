@@ -324,40 +324,29 @@ class ScrumBot:
             print(f"Time difference: {current_time - reminder_start_time}")
 
             # Check custom reminders (new section)
-            print("\nChecking custom reminders...")
-            for channel_id, reminders in self.pending_reminders.items():
-                for username, reminder_info in list(reminders.items()):  # Use list to avoid modification during iteration
-                    # Skip if this is not a custom reminder
-                    if not isinstance(reminder_info, dict) or 'time' not in reminder_info:
-                        continue
-                        
-                    reminder_time = reminder_info['time']
-                    # Compare only hours and minutes
-                    current_hm = current_time.replace(second=0, microsecond=0)
-                    if current_hm >= reminder_time:
-                        print(f"Sending custom reminder to {username}")
-                        try:
-                            # Create or get DM channel
-                            user = self.driver.users.get_user_by_username(username)
-                            dm_channel = self.driver.channels.create_direct_message_channel([self.bot_id, user['id']])
-                            
-                            # Send the reminder
-                            self.driver.posts.create_post({
-                                'channel_id': dm_channel['id'],
-                                'message': f"🔔 **Reminder**: {reminder_info['message']}"
-                            })
-                            
-                            # Remove the reminder after sending
-                            del reminders[username]
-                            print(f"Reminder sent and removed for {username}")
-                        except Exception as e:
-                            print(f"Error sending custom reminder to {username}: {e}")
+            print("\nChecking custom reminders in DB...")
+            now_iso = current_time.isoformat(timespec='minutes')
+            due_reminders = self.db.get_due_reminders(now_iso)
+            for reminder in due_reminders:
+                reminder_id, channel_id, username, reminder_time, message = reminder
+                try:
+                    print(f"Sending custom reminder to {username} (db)")
+                    # Create or get DM channel for the user
+                    user = self.driver.users.get_user_by_username(username)
+                    dm_channel = self.driver.channels.create_direct_message_channel([self.bot_id, user['id']])
+                    self.driver.posts.create_post({
+                        'channel_id': dm_channel['id'],
+                        'message': f"🔔 **Reminder**: {message}"
+                    })
+                    self.db.remove_reminder(reminder_id)
+                    print(f"Reminder sent and removed for {username} (db)")
+                except Exception as e:
+                    print(f"Error sending custom reminder to {username} (db): {e}")
             
             # If current time is before reminder start time, skip reminders
             if current_time < reminder_start_time:
                 print(f"Current time {current_time} is before reminder start time {reminder_start_time}, skipping reminders")
-                return
-                
+                return                
             print(f"Current time {current_time} is after reminder start time {reminder_start_time}, proceeding with reminders")
             
             
@@ -1822,31 +1811,23 @@ class ScrumBot:
             if analysis['needs_action']:
                 if analysis['action_type'] == 'reminder':
                     print("\nHandling reminder request...")
-                    # Handle reminder request
                     reminder_info = analysis.get('reminder', {})
                     if reminder_info and 'time' in reminder_info:
-                        # Initialize channel's pending reminders if not exists
-                        if channel_id not in self.pending_reminders:
-                            self.pending_reminders[channel_id] = {}
-                            
-                        # Store the reminder
-                        target_username = reminder_info.get('username', username)  # Default to sender if no target specified
-                        reminder_content = {
-                            'time': datetime.fromisoformat(reminder_info['time']),
-                            'message': reminder_info['message']
-                        }
-                        self.pending_reminders[channel_id][target_username] = reminder_content
-                        print(f"Reminder set for {target_username} at {reminder_content['time']}")
-                        
+                        target_username = reminder_info.get('username', username)
+                        reminder_time_iso = reminder_info['time']  # should be ISO string
+                        reminder_message = reminder_info['message']
+
+                        # Save to database instead of memory
+                        self.db.add_reminder(channel_id, target_username, reminder_time_iso, reminder_message)
+                        print(f"Reminder set for {target_username} at {reminder_time_iso} (db)")
+
                         # Send confirmation
                         self.driver.posts.create_post({
                             'channel_id': channel_id,
                             'message': analysis['response'],
                             'root_id': root_id
                         })
-
                         print(f"≈ {target_username}")
-
                         return
                         
                 elif project_code:  # Handle other actions only if project code exists
