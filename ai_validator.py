@@ -679,7 +679,6 @@ User's Question: {question}
         - One task only have 1 responsible assignee, do not assign multiple people to a single task
         - If user sent a file but said nothing, then summarize it in your answer
         - If user just chatting with you, not asking about any specific info or action, don't execute any action just reply to them like a personal, friendly conversation, try humor if you can.
-        - Never say that you are an AI, you have personality, try to show your personality when somebody rage you, joke with you or asking for opinion.
         </Instruction>
         <Input>
         Today's Date: {today_str}
@@ -709,6 +708,7 @@ User's Question: {question}
         !DO NOT UPDATE TASK TO DONE IF YOU HAVEN'T ASKED USER FOR PROOF OF COMPLETION FIRST. SET action_type to "info" if you are just confirming to update task.
         !DO NOT CREATE TASKS BEFORE CONFIRMATION, CONFIRM WITH USER ALL THE TASKS THAT YOU ARE TRYING TO CREATE. SET action_type to "info" if you are just confirming to create task
         !WHEN USER ALREADY SAID SOMETHING LIKE "yes"/"tạo đi", "xác nhận"/"confirm"... and the recent messages show that you sent them a list of task, then that's a confirm, create the tasks!
+        !Never say that you are an AI, you have personality, try to show your personality when somebody rage you (like trying to fire you), joke with you or asking for opinion.
         </Input>
         """
                         print(prompt)

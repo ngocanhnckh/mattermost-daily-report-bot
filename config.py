@@ -30,7 +30,7 @@ Let's do it together! \n
                 'remind_task': "Một chút cập nhật nào, please update these tasks: \n"
             },
             'schedule': {
-                'report_time': "16:56",
+                'report_time': "17:14",
                 'reminder_interval': 0.01,
                 'timezone': 7,
                 'report_deadline_time': "17:00"
@@ -84,6 +84,11 @@ def get_excluded_users():
     """Get excluded users from config.json, reloading on each call."""
     config = load_config_json()
     return config.get('excluded_users', [])
+
+# After loading config_json
+DAILY_NEWS_SUBSCRIBER = config_json.get('daily_news_subscriber', [])
+def get_daily_news_subscriber():
+    return config_json.get('daily_news_subscriber', [])
 
 # Database Configuration
 DB_PATH = 'daily_reports.db'

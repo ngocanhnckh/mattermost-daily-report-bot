@@ -1,17 +1,19 @@
 import time
+from datetime import datetime, timedelta, timezone
 import schedule
 from datetime import datetime, timedelta
 from threading import Thread
 from mattermostdriver import Driver
 from database import Database
 from ai_validator import AIValidator
+from message_analyzer import MessageAnalyzer
 import traceback
 from config import (
     MATTERMOST_URL, BOT_TOKEN, BOT_USERNAME,
     REPORT_TIME, REMINDER_INTERVAL, get_excluded_users,
     DAILY_REPORT_MESSAGE, TIMEZONE,
     AI_VALIDATION_ENABLED, OPENROUTER_API_KEY, SITE_URL, SITE_NAME,
-    TEAM_NAME, REPORT_DEADLINE_TIME, get_user_mappings, get_channel_mappings,
+    TEAM_NAME, REPORT_DEADLINE_TIME, get_user_mappings, get_channel_mappings, get_daily_news_subscriber,
     REMIND_TASK_MESSAGE, JIRA_URL
 )
 import ssl
@@ -178,6 +180,7 @@ class ScrumBot:
                     
                     print(f"\n!!! TRIGGERING DAILY REPORT at {current_time} !!!")
                     self.send_daily_report()
+                    self._send_daily_summaries_and_suggestions()
                     last_run_date = current_date
                     print(f"Updated last run date to: {last_run_date}")
                 else:
@@ -202,6 +205,156 @@ class ScrumBot:
                 print(f"Error in scheduler loop: {str(e)}")
                 print(f"Full error: {traceback.format_exc()}")
                 time.sleep(60)
+
+    def send_channel_message(self, channel_id, message, root_id=None):
+        """
+        Send a message to a channel, optionally as a reply in a thread (root_id).
+        """
+        post_data = {
+            "channel_id": channel_id,
+            "message": message
+        }
+        if root_id:
+            post_data["root_id"] = root_id
+        self.driver.posts.create_post(post_data)
+
+    def get_channel_messages(self, channel_id: str, days: int = 2):
+        """
+        Get messages from a channel for the last `days` days, formatted for AI summarization.
+        Returns a list of dicts: [{'sender': username, 'text': message, 'timestamp': iso_time}, ...]
+        """
+        try:
+            # Calculate the earliest timestamp to include
+            now = datetime.now(timezone.utc)
+            earliest_time = now - timedelta(days=days)
+            earliest_ts = int(earliest_time.timestamp() * 1000)  # Mattermost uses ms
+    
+            posts = self.driver.posts.get_posts_for_channel(channel_id)
+            messages = []
+            if posts and 'posts' in posts:
+                for post_id, post in posts['posts'].items():
+                    # Skip bot messages and empty messages
+                    if post.get('user_id') == self.bot_id or not post.get('message'):
+                        continue
+                    create_at = post.get('create_at', 0)
+                    if create_at < earliest_ts:
+                        continue
+                    # Get username
+                    try:
+                        user = self.driver.users.get_user(post.get('user_id', ''))
+                        sender = user['username']
+                    except Exception:
+                        sender = 'Unknown User'
+                    # Format timestamp
+                    ts = datetime.fromtimestamp(create_at / 1000, tz=timezone.utc).isoformat()
+                    messages.append({
+                        'sender': sender,
+                        'text': post.get('message', ''),
+                        'timestamp': ts
+                    })
+            # Sort by timestamp ascending (oldest first)
+            messages.sort(key=lambda x: x['timestamp'])
+            return messages
+        except Exception as e:
+            print(f"Error getting messages for channel {channel_id}: {e}")
+            print(f"Full error: {traceback.format_exc()}")
+            return []
+
+    def _send_daily_summaries_and_suggestions(self):
+        """
+        Aggregate messages and Jira tasks for each user across all channels, summarize/suggest once,
+        and DM the user their daily summary.
+        """
+        try:
+            print("\n=== Sending Daily Summaries and Suggestions (DM) ===")
+            current_time = datetime.now(TIMEZONE)
+            if current_time.weekday() >= 5:
+                print("It's weekend, skipping daily summary.")
+                return
+    
+            user_mappings = get_user_mappings()
+            user_data = {}
+    
+            # 1. Aggregate messages and tasks for each user across all channels
+            for channel_id, channel_info in self.channels.items():
+                channel_name = channel_info.get('name', '')
+                if '__' in channel_name or channel_name == '' or channel_name == 'town-square':
+                    continue
+
+                print(f"Checking channel: {channel_name}")
+                members = channel_info.get('members', [])
+                jira_project = channel_info.get('jira_project')
+                messages = self.get_channel_messages(channel_id, days=2)
+    
+                for member in members:
+                    if member not in get_daily_news_subscriber():
+                        print(f"Skipping member {member} as they are not in daily news subscriber list")
+                        continue
+                    print(f"Checking member: {member} in channel {channel_name}")
+                    if member in get_excluded_users():
+                        continue
+                    user_info = user_mappings.get(member)
+                    if not user_info:
+                        continue
+                    # Initialize user data if not already
+                    if member not in user_data:
+                        user_data[member] = {
+                            "messages": [],
+                            "tasks": [],
+                            "user_info": user_info
+                        }
+                    # Add messages relevant to the user (could also filter for mentions, but here we aggregate all)
+                    user_data[member]["messages"].extend(messages)
+                    print(f"Added {len(messages)} messages for {member}")
+                    # Add tasks for this project
+                    jira_username = user_info.get('jira_username', member)
+                    if jira_project:
+                        tasks = self.jira_service.get_user_active_tasks(jira_username, jira_project)
+                        user_data[member]["tasks"].extend(tasks)
+                        print(f"Added {len(tasks)} tasks for {member}")
+    
+            # 2. For each user, summarize and suggest once, then DM
+            for username, data in user_data.items():
+                # Remove duplicate tasks (optional, based on Jira key)
+                unique_tasks = {task['key']: task for task in data["tasks"]}.values()
+                summary = self.message_analyzer.summarize_channel_messages(
+                    data["messages"], username, data["user_info"]
+                )
+                suggestions = self.message_analyzer.suggest_next_tasks(
+                    list(unique_tasks), summary, username
+                )
+                if summary and suggestions:
+                    dm_message = (
+                        f"{suggestions}"
+                    )
+                    # Send DM
+                    user_id = self._get_user_id_by_username(username)
+                    if not user_id:
+                        print(f"Could not find user_id for {username}, skipping DM.")
+                        continue
+                    dm_channel_id = self._get_dm_channel_id(user_id)
+                    self.send_channel_message(dm_channel_id, dm_message)
+        except Exception as e:
+            print(f"Error in _send_daily_summaries_and_suggestions: {str(e)}")
+            print(f"Full error: {traceback.format_exc()}")
+    
+    def _get_user_id_by_username(self, username):
+        """Helper to get Mattermost user_id from username."""
+        try:
+            user = self.driver.users.get_user_by_username(username)
+            return user['id']
+        except Exception as e:
+            print(f"Error getting user_id for {username}: {e}")
+            return None
+    
+    def _get_dm_channel_id(self, user_id):
+        """Helper to get or create a DM channel with a user."""
+        try:
+            dm_channel = self.driver.channels.create_direct_message_channel([self.bot_id, user_id])
+            return dm_channel['id']
+        except Exception as e:
+            print(f"Error getting DM channel for user_id {user_id}: {e}")
+            return None
 
     def _check_and_send_ai_reports(self):
         """Check for users who haven't reported and send AI-generated reports."""
@@ -245,6 +398,9 @@ class ScrumBot:
                             continue
                             
                         active_tasks = self.jira_service.get_user_active_tasks(jira_username, jira_project)
+
+                        
+
                         if not active_tasks:
                             print(f"User {member} has no active tasks, skipping AI report")
                             continue
