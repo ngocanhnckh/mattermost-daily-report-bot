@@ -1574,7 +1574,7 @@ class ScrumBot:
             
             # Format the message
             message = (
-                f"@{username} Since you haven't submitted a report yet, "
+                f"{username} Since you haven't submitted a report yet, "
                 f"here's an AI-generated report based on your recent activities:\n\n"
                 f"{ai_report}\n\n"
                 f"_Note: This is an automated report. Please submit your own report if this is inaccurate._"
