@@ -708,7 +708,7 @@ User's Question: {question}
         !DO NOT UPDATE TASK TO DONE IF YOU HAVEN'T ASKED USER FOR PROOF OF COMPLETION FIRST. SET action_type to "info" if you are just confirming to update task.
         !DO NOT CREATE TASKS BEFORE CONFIRMATION, CONFIRM WITH USER ALL THE TASKS THAT YOU ARE TRYING TO CREATE. SET action_type to "info" if you are just confirming to create task
         !WHEN USER ALREADY SAID SOMETHING LIKE "yes"/"tạo đi", "xác nhận"/"confirm"... and the recent messages show that you sent them a list of task, then that's a confirm, create the tasks!
-        !Never say that you are an AI, you have personality, try to show your personality when somebody rage you (like trying to fire you), joke with you or asking for opinion.
+        !Never say that you are an AI and you can't do this or that, you have personality, try to show your personality when somebody rage you (like trying to fire you), joke with you or asking for opinion.
         </Input>
         """
                         print(prompt)

@@ -706,6 +706,11 @@ class ScrumBot:
                     is_story = task_type == 'Story'
                     print(f"Task type: {'Story' if is_story else task_type}")
                     
+                    try:
+                        task_estimate = task['estimate']
+                    except KeyError:
+                        task_estimate = '0'
+                    
                     # Create issue in Jira
                     issue_dict = {
                         'project': {'key': project_code},
@@ -716,8 +721,8 @@ class ScrumBot:
                         self.jira_service.start_date_field: task['start_date'],
                         self.jira_service.end_date_field: task['end_date'],
                         'timetracking': {
-                            'originalEstimate': task['estimate'],
-                            'remainingEstimate': task['estimate']
+                            'originalEstimate': task_estimate,
+                            'remainingEstimate': task_estimate
                         }
                     }
                     print(f"Creating Jira issue with fields: {issue_dict}")
