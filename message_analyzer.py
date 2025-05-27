@@ -128,15 +128,11 @@ class MessageAnalyzer(AIValidator):
             for task in jira_tasks:
                 prompt += f"- {task.get('key', '')}: {task.get('summary', '')} ({task.get('status', '')}) with deadline ({task.get('end_date', '')})\n"
             prompt += (
-                "\nBased on the above, craft a concise report for user on what happened across all channels, what does it means to them, and what should they do next. Give your strategic opinion as well to help user facilate decision making. Also give them advise on the tasks that they should take on today based on importance and urgency matrix, tasks that overdue or in high risk that they might need to pay attention. "
-                "\n At the beginning of the report, you should greet user, wish them a good day and give them a random qoute based on the context of recent discussions that might help solve their problem or motivate them (translate to the language of the report if the qoute is in foreigner language)"
-                "\n The report will be divided in to 3 sections:"
-                "\n 1. Summary on recent discussions. Strategic actionable next steps they should do today to resolve situation that arised in recent discussion only if that might directly relate to them and need their action."
-                "\n 2. Summary on user's active task (remember to specify deadline if has, task summary, task status); List the tasks that they should focus on doing today based on importance and urgency matrix as well as their workload for 1 day."
-                "\n 3. Ask user about their overdue tasks or close to deadline tasks if they have any blockers or needed any help to complete them on time or asap, suggest them solutions to complete those tasks including creating another task to get other team member or Project Manager to involve in helping them. Suggest them that you can create tasks on Jira to assign people that can help them complete the tasks or eliminate blockers if any (And compose title, description, assigne, due date, estimate hours for the task ofcourse), and tell them to message you if they want to create those tasks."
-                "\n 4. Give them advise about improving their current work performance by some tips tricks and real examples, advise them to communicate more with the team if you see they don't communicate much."
-                "\n The report title should be something like Daily News {enter date} for {username}"
-                "Prioritize urgent or blocked tasks, and mention any follow-ups from the messages. \n Give the report in multilanguage (Vietnamese and English). Use Vietnamese first, and at the top of the Vietnamese report title add (English version below)"
+                "\nBased on the above, send a personalized message to user (use Vietnamese). First, look for any overdue or close to deadline task and ask them about those tasks (please write out the task name, not onl the task key), ask if they have any problem with these tasks, any blockers or help needed. You can also suggest them some tasks you can create for them or other people to come in and help them with the task"
+                "\n Next you concisely summary what happened in recent discussions (inclue URL if has), and give them a strategic actionable next steps they should do today to resolve situation that arised in recent discussion only if that might directly relate to them and need their action."
+                
+                "\n If they don't have any over due task, based on urgency and the task's importance, suggest 5 tasks that they should take on today (remember to specify deadline if has, task summary, task status)"
+                "\n Write some kind words and tips / quotes to encourage them to do better, communicate more with team mates and have a productive day"
             )
 
             print(prompt)

@@ -566,6 +566,7 @@ User's Question: {question}
         - Break down the work into appropriate sub-tasks
         6. Always confirm with user all the task before creating or updating
         Example, if user just asked you to do something and you did not confirm, you should return (this is just example, in reality you may create more than 2 tasks depends on the situation)
+        If user is trying to create a task for somebody, adivse them as well on their workload and expertise, suggest better assignment if you have any
         ```
         {{
             "needs_action": false,
@@ -610,7 +611,7 @@ User's Question: {question}
                     "start_date": "YYYY-MM-DD",
                     "end_date": "YYYY-MM-DD",
                     "estimate": "Xh",
-                    "description": "Detailed task description",
+                    "description": "Detailed task description", // Try your best to put as much info here as possible to define a clear task. Recent message context might help
                     "sub_tasks": [  // Only include for stories
                         {{
                             "title": "Sub-task title",
@@ -656,6 +657,7 @@ User's Question: {question}
         }}
 
         Important:
+        - If the action needed is to create task and there is an Attachment URL inside the task, you MUST include it in the task's description
         - All tasks must have assignee, even if it's a story and there are sub-tasks below it, just take the project manager or the leader as the asignee of the story
         - Aware of the asking user's username in "User Question" to know who you are talking to and answer in their language, as well as giving them information related to them
         - Do not change time_estimates of tasks that has status Done

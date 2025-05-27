@@ -1902,6 +1902,7 @@ class ScrumBot:
             print(f"\nChannel members: {len(channel_members)}")
 
             context_text=""
+            url_context = ""
             try:
                 print("\nProcessing files...")
                 file_ids = post_data.get('file_ids', [])
@@ -1928,6 +1929,7 @@ class ScrumBot:
 
                     for idx, file_id in enumerate(file_ids):
                         file_name = files_metadata[idx]['name'] if idx < len(files_metadata) else f"{file_id}"
+                        url_context += f"{MATTERMOST_URL}/api/v4/files/{file_id}" + "\n"
                         file_path = download_file(file_id, file_name)
                         if file_path:
                             mime_type, _ = mimetypes.guess_type(file_path)
@@ -1942,12 +1944,18 @@ class ScrumBot:
 
                 # Combine all extracted texts (if any)
                 context_text = "\n\n".join(extracted_texts) if extracted_texts else ""
+                
             except Exception as e:
                 print(f"Failed to extract text: {e}")
                 context_text = ""
+            
+            print("Context text: ", context_text)
+            print("URL: ", url_context)
 
             if context_text:
-                message += f"@{username}: {message}" + "\n File content: \n ```\n" + context_text + "\n```"
+                message += f"@{username}: {message}" + "\n File content: \n ```\n" + context_text + "\n```" + "\n Attachments URL: " + url_context
+            elif url_context:
+                message += f"@{username}: {message}" + "\n Attachments URL:" + url_context + "\n```"
             else:
                 message = f"@{username}: {message}"
 
