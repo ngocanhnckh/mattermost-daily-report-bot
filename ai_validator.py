@@ -471,6 +471,7 @@ Return a JSON response with this format:
 }}
 
 Important:
+- If user ask you to create a task, but not tell you the detail of the task, find all most recent relevant message indicate the task details or have related context that might be the task
 - If user is confirming a task action (ex. "please create", "i confirm", "please do", "tạo đi", "ok", "đúng rồi"), look for the latest message that listed the tasks that you are confirming with the user
 ["@user: Please update task ABC-123 to done","@bot: So can I confirm, what actions have you taken to done this task?","@user: Yes for this problem, I solved it by... so I mark it as done"]
 - If you see consecutive messages that potentially related to the question, mark as needing context
