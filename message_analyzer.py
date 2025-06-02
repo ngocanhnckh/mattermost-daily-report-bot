@@ -99,7 +99,7 @@ class MessageAnalyzer(AIValidator):
             for msg in messages:
                 prompt += f"- [{msg.get('timestamp', '')}] {msg.get('sender', '')}: {msg.get('text', '')}\n"
             prompt += (
-                "\nReturn a concise summary, highlight action items, and mention anything that needs the user's attention."
+                "\nReturn a concise summary, highlight action items, and mention anything that needs the user's attention. Also in your summary, you must indicates what is the one final latest most recent messages (about 1-5 messages that related to eachother and were sent later in the end) is about"
             )
             completion = self.client.chat.completions.create(
                 model="google/gemini-flash-1.5",
@@ -109,6 +109,35 @@ class MessageAnalyzer(AIValidator):
             return completion.choices[0].message.content
         except Exception as e:
             print(f"Error summarizing channel messages: {e}")
+            print(f"Full error: {traceback.format_exc()}")
+            return None
+
+    def define_if_need_channel_context(self, user_mesg):
+        """
+        Suggest if the user's message requires the agent to summarize all the recent channel messages
+        """
+        if not self.enabled or not self.client:
+            return None
+        try:
+            prompt = (
+                f"You are an assistant for a project team. Here is a summary of recent channel messages:\n"
+                f"Today's date: {datetime.datetime.now().strftime('%Y-%m-%d')}\n"
+                f"User message: {user_mesg}\n\n"
+                f"Based on the above, suggest if the user's message requires the agent to summarize all the recent channel messages."
+                f"Example:\n"
+                f"* User message: 'Gần đây mọi người đang nói về vấn đề gì nhỉ?' 'Dạo này có gì xảy ra không, tóm tắt cho tôi' 'Tôi có bỏ lỡ gì gần đây không' -> true\n"
+                f"* User message: 'Ok, em tạo công việc đi' -> false\n"
+                f"Return only 'true' or 'false' without any qoutes or special characters"
+            )
+            completion = self.client.chat.completions.create(
+                model="google/gemini-flash-1.5",
+                extra_headers=self.extra_headers,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            print(f"AI response: {completion.choices[0].message.content}")
+            return completion.choices[0].message.content.strip().lower() == "true"
+        except Exception as e:
+            print(f"Error defining if need channel context: {e}")
             print(f"Full error: {traceback.format_exc()}")
             return None
 

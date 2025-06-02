@@ -991,6 +991,18 @@ class ScrumBot:
         print("\nTask actions completed successfully")
         return response, created_tasks, updated_tasks
 
+    def _get_user_inbox_messages(self, user_id, days=2):
+        """
+        Fetch all DM (inbox) messages between the bot and the specified user.
+        """
+        try:
+            dm_channel_id = self._get_dm_channel_id(user_id)
+            messages = self.get_channel_messages(dm_channel_id, days=days)
+            return messages
+        except Exception as e:
+            print(f"Error fetching inbox messages for user {user_id}: {e}")
+            return []
+
     async def _handle_dm(self, post):
         """Handle direct messages to the bot."""
         try:
@@ -1007,6 +1019,7 @@ class ScrumBot:
             print(f"\n=== Handling DM from {username} ===")
             print(f"Message: {message}")
             
+
             # Get user's active tasks from all projects where user is a channel member
             user_tasks = []
             for channel_id, channel_info in self.channels.items():
@@ -1024,9 +1037,30 @@ class ScrumBot:
             # Sort tasks by last updated
             user_tasks.sort(key=lambda x: x.get('updated', datetime.min), reverse=True)
             user_tasks = user_tasks[:100]  # Limit to 100 most recent tasks
+
+            # Get user's recent DMs with bot
+            print("\n=== Getting user's recent DMs with bot ===")
+            user_dms = self._get_user_inbox_messages(user_id)
             
+            print(f"User's recent DMs: {user_dms}")
+
+            # Check if user needs channel context
+            print("\n=== Checking if user needs channel context ===")
+            latest_user_message = user_dms[-1]['text'] if user_dms else ""
+            need_channel_context = self.message_analyzer.define_if_need_channel_context(latest_user_message)
+            print(f"Need channel context: {need_channel_context}")
+
+            # Summarize recent DMs
+            print("\n=== Summarizing recent DMs ===")
+            print(user_info)
+            recent_dms = self.message_analyzer.summarize_channel_messages(user_dms, username, user_info)
+            print(f"Recent DMs: {recent_dms}")
+
             # Get recent messages from all channels
-            recent_messages = self._get_user_all_channels_messages(username)
+            if need_channel_context:    
+                recent_messages = self._get_user_all_channels_messages(username)
+            else:
+                recent_messages = []
             
             # Get channel members for context
             channel_members = {}
@@ -1055,9 +1089,11 @@ class ScrumBot:
                 formatted_tasks.append(formatted_task)
             
             # Analyze the message with full context, including username in the message
+        
+            
             print("\nAnalyzing question...")
             analysis = self.message_analyzer.analyze_question(
-                question=f"@{username}: {message}",
+                question=f"@{username}: {message} \n  <Recent DMs>{recent_dms}</Recent DMs>\n Note: Recent DMs show summary of your previous message with users. You should use Recent DMs to see if user are trying to ask or confirm a follow up question or action, then execute it if they confirm. In the other hand, Recent Channel Messages show everybody's messages in case the user need to summarize or ask about what recently happened. This section may be empty if not needed",
                 prior_messages=recent_messages,
                 active_tasks=formatted_tasks,
                 channel_members=channel_members
@@ -1107,6 +1143,7 @@ class ScrumBot:
         except Exception as e:
             print(f"Error sending DM: {e}")
             print(f"Full error: {traceback.format_exc()}")
+
 
     def _get_user_all_channels_messages(self, username: str) -> List[str]:
         """Get recent messages from all channels the user is in."""

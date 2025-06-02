@@ -230,8 +230,6 @@ class AIValidator:
             question_type_prompt = f"""Determine if this question is asking for general project action, info or a detailed project report or a reminder request
 
             Do not try to guess, since sometime user's question is the follow up of previous messages that you are not provided, in case you feel unsure, just output "other"
-
-
             Return a JSON response with this format:
             {{
                 "type": "project_status" | "reminder" | "other",  // Type of question
@@ -241,7 +239,7 @@ class AIValidator:
 
             Important:
             - "other": Request for task update in Jira; Task creation/updates, request for checking their task and dicussion (example check all my task and disccussion) general questions, assignment changes, want to execute an action related to jira, has a specific question about specific task or team member's task  etc. example: update missing task for me, create a task,...
-            - "project_status": When user specifically add for or mention "detailed report" of the project OR user mentioned "current project status" or something like "tình hình dự án hiện tại". Other wise, if they just ask you to do an action like update task status or talk about a very specific task, output as "other"
+            - "project_status": When user specifically add for or mention "detailed report" of the project OR user mentioned "current project status" or something like "tình hình dự án hiện tại". Other wise, if they just ask you to do an action like update task status or talk about a very specific task, output as "other". Don't mistake with the case when user say "what discussed recently" or "gần đây mọi người đang bàn / nói về vấn đề gì". This case you should return "other"
             - "reminder": Only output this when user specifically asked to be reminded about something at a specific time. User must actually say "remind me" or something like that.
 
             <User Question>
@@ -709,6 +707,7 @@ User's Question: {question}
         {question}
         </User Question>
         !GIVE ANSWER USING THE SAME LANGUAGE AS THE USER'S QUESTION
+        !CREATE TASK FOR OTHER USER IF USER TOLD YOU THAT THEIR WORK IS BEING BLOCKED BY ANY OTHER USER OR EXTERNAL FACTOR THAT ISN'T THEMSELF AND YOU FOUND ONE OTHER USER MIGHT BE ABLE TO HELP
         !DO NOT UPDATE TASK TO DONE IF YOU HAVEN'T ASKED USER FOR PROOF OF COMPLETION FIRST. SET action_type to "info" if you are just confirming to update task.
         !DO NOT CREATE TASKS BEFORE CONFIRMATION, CONFIRM WITH USER ALL THE TASKS THAT YOU ARE TRYING TO CREATE. SET action_type to "info" if you are just confirming to create task
         !WHEN USER ALREADY SAID SOMETHING LIKE "yes"/"tạo đi", "xác nhận"/"confirm"... and the recent messages show that you sent them a list of task, then that's a confirm, create the tasks!
