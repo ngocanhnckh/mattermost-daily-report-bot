@@ -1093,7 +1093,7 @@ class ScrumBot:
             
             print("\nAnalyzing question...")
             analysis = self.message_analyzer.analyze_question(
-                question=f"@{username}: {message} \n  <Recent DMs>{recent_dms}</Recent DMs>\n Note: Recent DMs show summary of your previous message with users. You should use Recent DMs to see if user are trying to ask or confirm a follow up question or action, then execute it if they confirm. In the other hand, Recent Channel Messages show everybody's messages in case the user need to summarize or ask about what recently happened. This section may be empty if not needed",
+                question=f"<Recent DMs>{recent_dms}</Recent DMs>\n <User Question>{message}</User Question> \n //Note: Recent DMs show summary of your previous message with users. The current question user is asking is User Question. You should use Recent DMs to add context to what User Question is asking, for example they are confirming the previous action, then you need to get that context to create task. In the other hand, Recent Channel Messages show everybody's messages in case the user need to summarize or ask about what recently happened. This section may be empty if not needed ",
                 prior_messages=recent_messages,
                 active_tasks=formatted_tasks,
                 channel_members=channel_members
