@@ -2,3 +2,5 @@
 daily_reports.db
 __pycache__
 config.json
+log.txt
+test.py
