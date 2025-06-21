@@ -217,6 +217,12 @@ class AIValidator:
               - message (str): What to remind about
               - username (str): Who to remind
         """
+        # Format member context first
+        members_context = "\n".join([
+            f"- @{username} (jira username: {details.get('jira_username', '')}): {details.get('bio', 'No bio')}"
+            for username, details in channel_members.items()
+        ])
+        
         if not self.enabled or not self.client:
             return {
                 "needs_action": False,
@@ -343,11 +349,7 @@ class AIValidator:
             if question_type['type'] == 'project_status':
                 today = datetime.now()
                 
-                # Format member context first
-                members_context = "\n".join([
-                    f"- @{username} (jira username: {details.get('jira_username', '')}): {details.get('bio', 'No bio')}"
-                    for username, details in channel_members.items()
-                ])
+                
                 
                 # Prepare detailed task data for AI analysis
                 task_details = []
@@ -370,72 +372,72 @@ class AIValidator:
 
                 status_prompt = f"""As a professional Project Manager, analyze the current project status and generate a comprehensive report based on the following data:
 
-Today's Date: {today.strftime('%Y-%m-%d')}
+                                    `Today's Date: {today.strftime('%Y-%m-%d')}
 
-<Project Tasks>
-{json.dumps(task_details, indent=2)}
-</Project Tasks>
+                                    <Project Tasks>
+                                    {json.dumps(task_details, indent=2)}
+                                    </Project Tasks>
 
-<Team Members and Their Roles>
-{members_context}
-</Team Members>
+                                    <Team Members and Their Roles>
+                                    {members_context}
+                                    </Team Members>
 
-Based on this data, generate a detailed project status report that includes:
+                                    Based on this data, generate a detailed project status report that includes:
 
-1. Project Overview
-   - Read all the summary of the tasks and give a short summary paragraph of what the team is trying to achieve
-   - Task distribution and completion rates: How many % is done, to do, in progress
-   - Key metrics and trends: be very specific
-   - Overall project health assessment
+                                    1. Project Overview
+                                    - Read all the summary of the tasks and give a short summary paragraph of what the team is trying to achieve
+                                    - Task distribution and completion rates: How many % is done, to do, in progress
+                                    - Key metrics and trends: be very specific
+                                    - Overall project health assessment
 
-2. Timeline Analysis
-   - Progress tracking: How many % of project is completed in the currnet sprint?
-   - Deadline compliance: How many % of tasks are completed on time?
-   - Risk identification: What are the specific risks? Show examples?
-   - Blockers and dependencies: What are the specific blockers? Show examples?
+                                    2. Timeline Analysis
+                                    - Progress tracking: How many % of project is completed in the currnet sprint?
+                                    - Deadline compliance: How many % of tasks are completed on time?
+                                    - Risk identification: What are the specific risks? Show examples?
+                                    - Blockers and dependencies: What are the specific blockers? Show examples?
 
-3. Team Performance
-   - Workload distribution (calculate workload hours against timeline start date end date of each member as well, assuming 1 member can load 4 hours of work per day in average)
-   - Resource utilization: How many % of team members are working on tasks?
-   - Capacity analysis: Are there any overloaded memeber? (total tasks > 40 hours in that week, using hour estimate data and start date end date)
-   - Individual performance metrics: What is the performance of each member in the team (Good, Average, Bad)? What are task completion rate of each member, how many late for deadline tasks they have? And what should we do with them?
+                                    3. Team Performance
+                                    - Workload distribution (calculate workload hours against timeline start date end date of each member as well, assuming 1 member can load 4 hours of work per day in average)
+                                    - Resource utilization: How many % of team members are working on tasks?
+                                    - Capacity analysis: Are there any overloaded memeber? (total tasks > 40 hours in that week, using hour estimate data and start date end date)
+                                    - Individual performance metrics: What is the performance of each member in the team (Good, Average, Bad)? What are task completion rate of each member, how many late for deadline tasks they have? And what should we do with them?
 
-4. Risk Assessment
-   - Overdue tasks: How many tasks are overdue?
-   - Upcoming deadlines: How many tasks have upcoming deadlines?
-   - Resource constraints: Are there any resource constraints?
-   - Technical challenges: What are the specific technical challenges?
-   - Mitigation strategies: What are the specific mitigation strategies?
+                                    4. Risk Assessment
+                                    - Overdue tasks: How many tasks are overdue?
+                                    - Upcoming deadlines: How many tasks have upcoming deadlines?
+                                    - Resource constraints: Are there any resource constraints?
+                                    - Technical challenges: What are the specific technical challenges?
+                                    - Mitigation strategies: What are the specific mitigation strategies?
 
-5. Recommendations
-   - Priority adjustments: What are the specific priority adjustments?
-   - Resource reallocation: What are the specific resource reallocations?
-   - Process improvements: What are the specific process improvements?
-   - Immediate actions needed: What are the specific immediate actions needed?
-   - Any tasks updates (assignee, status, estimate, start date, end date) or task creation needed?
+                                    5. Recommendations
+                                    - Priority adjustments: What are the specific priority adjustments?
+                                    - Resource reallocation: What are the specific resource reallocations?
+                                    - Process improvements: What are the specific process improvements?
+                                    - Immediate actions needed: What are the specific immediate actions needed?
+                                    - Any tasks updates (assignee, status, estimate, start date, end date) or task creation needed?
 
-Format the report professionally with:
-- Clear section headings
-- Data-backed insights
-- Specific examples from the task list
-- Actionable recommendations
-- Risk mitigation strategies
+                                    Format the report professionally with:
+                                    - Clear section headings
+                                    - Data-backed insights
+                                    - Specific examples from the task list
+                                    - Actionable recommendations
+                                    - Risk mitigation strategies
 
-Important:
-- Focus on patterns and trends in the data
-- Identify potential bottlenecks
-- Highlight both risks and opportunities
-- Provide specific, actionable recommendations
-- Use professional PM terminology
-- Keep the report around 1000 words
-- Make it easy to read with bullet points and clear sections
-- Answer in the original request message language. 
-- Everything must be backed up with numbers or proof/example (ex. "Task VIN-123: Get it done" has the deadline 11/1/2025 but today still not done) in the given data
-- When you mention a task, you must also include the task's title or summary. Don't just give the task code
-<User Question>
-{question}
-</User Question>
-! The language that the report use must be the same as <User Question>. ex. if user asked in Vietnamese use Vietnamese to write the report
+                                    Important:
+                                    - Focus on patterns and trends in the data
+                                    - Identify potential bottlenecks
+                                    - Highlight both risks and opportunities
+                                    - Provide specific, actionable recommendations
+                                    - Use professional PM terminology
+                                    - Keep the report around 1000 words
+                                    - Make it easy to read with bullet points and clear sections
+                                    - Answer in the original request message language. 
+                                    - Everything must be backed up with numbers or proof/example (ex. "Task VIN-123: Get it done" has the deadline 11/1/2025 but today still not done) in the given data
+                                    - When you mention a task, you must also include the task's title or summary. Don't just give the task code
+                                    <User Question>
+                                    {question}
+                                    </User Question>
+                                    ! The language that the report use must be the same as <User Question>. ex. if user asked in Vietnamese use Vietnamese to write the report`
 """
 
                 # Get status report
@@ -470,6 +472,7 @@ Return a JSON response with this format:
 
 Important:
 - If user ask you to create a task, but not tell you the detail of the task, find all most recent relevant message indicate the task details or have related context that might be the task
+- If user ask you to review an employee, find all messages mentioning that employee username or message from that employee
 - If user is confirming a task action (ex. "please create", "i confirm", "please do", "tạo đi", "ok", "đúng rồi"), look for the latest message that listed the tasks that you are confirming with the user
 ["@user: Please update task ABC-123 to done","@bot: So can I confirm, what actions have you taken to done this task?","@user: Yes for this problem, I solved it by... so I mark it as done"]
 - If you see consecutive messages that potentially related to the question, mark as needing context
@@ -485,6 +488,12 @@ If user asked to summarize messages or asked what recently happened in many chan
 - Choose message that asking the asking user to do something
 - Summarize in a concise passage and recommended next steps
 
+
+
+        <Team Members>
+        {members_context}
+        </Team Members>
+        
 
 <Recent Channel Messages>
 {messages_text}
@@ -549,6 +558,8 @@ User's Question: {question}
         2. Creation of new tasks (either standalone tasks or stories with sub-tasks)
         3. Updates to existing tasks (including converting tasks to stories)
         
+        If user is asking to review an employee like "Review X's performance" / "Đánh giá nhân viên X"... you need to analyze all recent messages related to that employee, and their task on Jira. Then analyze their work performance, problem solving skill, commuincation, efficiency, what are their strength and weekness (must back up with example like some of their message summary and task statistic...) and how they should improve.
+
         DO NOT UPDATE TASK TO DONE IF YOU HAVEN'T ASKED USER FOR PROOF OF COMPLETION FIRST
 
         Important Task Creation Guidelines:
