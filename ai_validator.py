@@ -731,7 +731,7 @@ User's Question: {question}
                         completion = self.client.chat.completions.create(
                             model="google/gemini-2.0-flash-001",
                             messages=[{"role": "user", "content": prompt}],
-                            max_tokens=4096,
+                            max_tokens=8000,
                             extra_headers=self.extra_headers
                         )
                         
