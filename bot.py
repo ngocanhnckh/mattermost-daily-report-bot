@@ -1639,7 +1639,7 @@ class ScrumBot:
             message = (
                 f"## 🔔 **Daily Scrum Report for {date_str}**\n\n"
                 f"{DAILY_REPORT_MESSAGE}"
-                f"Good morning {' '.join(f'{user}' for user in tagged_users)}! "
+                f"\nGood morning {' '.join(f'{user}' for user in tagged_users)}! "
                 f"Here are your tasks and suggested focus for today:\n\n"
             )
             

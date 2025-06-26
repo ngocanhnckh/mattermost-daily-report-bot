@@ -561,6 +561,7 @@ Consider:
 3. If the blocker requires coordination, assign to project manager/tech lead
 4. If the blocker is about dependencies, assign to the person responsible for that dependency
 5. Don't automatically assign back to the reporter unless they're actually the best person to resolve it
+6. If the blocker description is in Vietnamese, create the task title in Vietnamese
 
 Return a JSON object with these exact fields:
 - assignee: the username (not Jira username) who should handle this
